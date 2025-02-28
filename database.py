@@ -27,9 +27,20 @@ PROPERTY_DATA_FILES = [
     'for_sale_20250227_0235.csv',
     'for_sale_20250227_0243.csv',
     'for_sale_20250227_0244.csv',
-    'for_sale_20250227_0245.csv'
+    'for_sale_20250227_0245.csv',
+    'for_sale_20250227_0438.csv',
+    'for_sale_20250227_0459.csv',
+    'for_sale_20250227_0502.csv',
+    'for_sale_20250227_0625.csv',
+    'for_sale_20250227_0629.csv',
+    'for_sale_20250227_0629.csv',
+    'for_sale_20250227_0638.csv',
+    'for_sale_20250227_0643.csv',
+    'for_sale_20250227_0659.csv',
+    'for_sale_20250227_0702.csv',
+    'for_sale_20250227_0705.csv'
 ]
-INVESTMENT_RESULTS_FILE = 'investment_analysis_results_20250227.csv'
+INVESTMENT_RESULTS_FILE = 'investment_analysis_results.csv'
 ZILLOW_RENT_DATA_FILE = 'zillow_rent_data.csv'
 
 # Neighborhood quality factors - default values if ZORI calculation fails
