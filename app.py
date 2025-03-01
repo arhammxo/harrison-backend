@@ -6,6 +6,9 @@ from pydantic import BaseModel, Field, validator
 import json
 import math
 from datetime import datetime
+import os
+import subprocess
+from google.cloud import storage
 
 app = FastAPI(
     title="Real Estate Investment API",
@@ -16,16 +19,32 @@ app = FastAPI(
 # Enable CORS for frontend development
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # For development - restrict in production
+    allow_origins=[
+        "https://harrison-frontend.vercel.app",  # Production frontend
+        "http://localhost:3000",                 # Local development (if needed)
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Database connection helper
+# Initialize at startup
+def download_db_at_startup():
+    if not os.path.exists('/tmp/investment_properties.db'):
+        client = storage.Client()
+        bucket = client.bucket('arhammxo-hdb')
+        blob = bucket.blob('investment_properties.db')
+        blob.download_to_filename('/tmp/investment_properties.db')
+    
+    print("Database downloaded successfully")
+
+# Call this function early in your app initialization
+download_db_at_startup()
+
+# Modify your connection function
 def get_db_connection():
-    conn = sqlite3.connect('investment_properties.db')
-    conn.row_factory = sqlite3.Row  # This enables column access by name
+    conn = sqlite3.connect('/tmp/investment_properties.db')
+    conn.row_factory = sqlite3.Row
     return conn
 
 # Base property model with all requested fields
