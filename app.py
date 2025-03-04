@@ -2,7 +2,7 @@ from fastapi import FastAPI, HTTPException, Query, Path, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from typing import List, Optional, Dict, Any
 import sqlite3
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, validator                                
 import json
 import math
 from datetime import datetime
@@ -30,11 +30,11 @@ app.add_middleware(
 
 # Initialize at startup
 def download_db_at_startup():
-    if not os.path.exists('/tmp/investment_properties.db'):
+    if not os.path.exists('/tmp/final_investment_properties.db'):
         client = storage.Client()
-        bucket = client.bucket('arhammxo-hdb')
-        blob = bucket.blob('investment_properties.db')
-        blob.download_to_filename('/tmp/investment_properties.db')
+        bucket = client.bucket('arhammxo-hdb')  # Your GCP bucket name
+        blob = bucket.blob('final_investment_properties.db')
+        blob.download_to_filename('/tmp/final_investment_properties.db')
     
     print("Database downloaded successfully")
 
@@ -43,7 +43,7 @@ download_db_at_startup()
 
 # Modify your connection function
 def get_db_connection():
-    conn = sqlite3.connect('/tmp/investment_properties.db')
+    conn = sqlite3.connect('/tmp/final_investment_properties.db')
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -76,6 +76,7 @@ class PropertyBase(BaseModel):
     hoa_fee: Optional[float] = None
     primary_photo: Optional[str] = None
     alt_photos: Optional[str] = None
+    investment_ranking: Optional[float] = None
     
     @validator('beds', 'full_baths', 'half_baths', 'sqft', 'list_price')
     def validate_non_negative(cls, v, values, **kwargs):
@@ -434,17 +435,257 @@ def paginate_results(query, params, page, page_size):
 async def root():
     """API root endpoint with basic information"""
     return {
-        "name": "Real Estate Investment API",
-        "version": "1.0.0",
-        "description": "API for analyzing real estate investment properties with detailed metrics",
-        "endpoints": {
-            "properties": "/properties/",
-            "cities": "/cities/",
-            "zipcodes": "/zipcodes/",
-            "market_stats": "/market-stats/",
-            "investment_analysis": "/investment-analysis/"
+        'name': 'Investment Properties API',
+        'version': '1.0.0',
+        'endpoints': {
+            'Search Properties': '/api/properties',
+            'Property Detail': '/api/properties/<property_id>',
+            'Property Calculation Audit': '/api/properties/<property_id>/audit',
+            'Cities': '/api/cities',
+            'Zip Codes': '/api/zipcodes',
+            'States': '/api/states',
+            'Documentation': '/docs'
         }
     }
+
+@app.get("/api/properties", tags=["Properties"], response_model=PaginatedResponse)
+async def search_properties(
+    zip_code: Optional[str] = None,
+    city: Optional[str] = None,
+    state: Optional[str] = None,
+    min_price: Optional[int] = None,
+    max_price: Optional[int] = None,
+    sort_by: str = "investment_ranking",
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100)
+):
+    """Search properties with filters"""
+    conn = get_db_connection()
+    try:
+        # Base query
+        base_query = """
+        SELECT 
+            property_id, full_street_line, city, state, zip_code,
+            beds, baths, sqft, list_price, price_per_sqft,
+            zori_monthly_rent, cap_rate, cash_on_cash, irr, total_return,
+            investment_ranking, primary_photo
+        FROM api_property_search
+        """
+        
+        count_query = "SELECT COUNT(*) as count FROM api_property_search"
+        
+        # Build where clauses
+        conditions = []
+        params = []
+        
+        if zip_code:
+            conditions.append("zip_code = ?")
+            params.append(zip_code)
+        
+        if city:
+            conditions.append("LOWER(city) = LOWER(?)")
+            params.append(city)
+        
+        if state:
+            conditions.append("LOWER(state) = LOWER(?)")
+            params.append(state)
+        
+        if min_price:
+            conditions.append("list_price >= ?")
+            params.append(min_price)
+        
+        if max_price:
+            conditions.append("list_price <= ?")
+            params.append(max_price)
+        
+        # Combine conditions
+        if conditions:
+            where_clause = " WHERE " + " AND ".join(conditions)
+            base_query += where_clause
+            count_query += where_clause
+        
+        # Add sorting
+        allowed_sort_fields = [
+            'investment_ranking', 'price_per_sqft', 'cap_rate', 
+            'cash_on_cash', 'irr', 'total_return', 'list_price'
+        ]
+        if sort_by not in allowed_sort_fields:
+            sort_by = "investment_ranking"
+        
+        direction = "DESC" if sort_by != "price_per_sqft" else "ASC"
+        base_query += f" ORDER BY {sort_by} {direction}"
+        
+        # Add pagination
+        offset = (page - 1) * limit
+        base_query += " LIMIT ? OFFSET ?"
+        params.extend([limit, offset])
+        
+        # Get total count
+        count_result = conn.execute(count_query, params[:-2] if params else []).fetchone()
+        total_count = count_result['count'] if count_result else 0
+        
+        # Get paginated results
+        results = conn.execute(base_query, params).fetchall()
+        properties = [dict(row) for row in results]
+        
+        # Calculate total pages
+        total_pages = (total_count + limit - 1) // limit
+        
+        return {
+            "success": True,
+            "data": {
+                "properties": properties,
+                "pagination": {
+                    "page": page,
+                    "limit": limit,
+                    "total_count": total_count,
+                    "total_pages": total_pages
+                },
+                "filters": {
+                    "zip_code": zip_code,
+                    "city": city,
+                    "state": state,
+                    "min_price": min_price,
+                    "max_price": max_price,
+                    "sort_by": sort_by
+                }
+            }
+        }
+    finally:
+        conn.close()
+
+@app.get("/api/properties/{property_id}", tags=["Properties"], response_model=PropertyDetail)
+async def get_property_detail(property_id: int):
+    """Get detailed information for a specific property"""
+    conn = get_db_connection()
+    try:
+        result = conn.execute(
+            "SELECT * FROM api_property_details WHERE property_id = ?", 
+            (property_id,)
+        ).fetchone()
+        
+        if not result:
+            raise HTTPException(status_code=404, detail=f"Property ID {property_id} not found")
+        
+        property_data = dict(result)
+        
+        # Parse alt_photos
+        alt_photos = property_data.get('alt_photos', '')
+        if alt_photos and isinstance(alt_photos, str):
+            try:
+                photo_list = json.loads(alt_photos)
+                property_data['alt_photos'] = photo_list
+            except json.JSONDecodeError:
+                property_data['alt_photos'] = [p.strip() for p in alt_photos.split(',') if p.strip()]
+        
+        # Create broker info object
+        property_data['broker_info'] = {
+            'broker_id': property_data.get('broker_id'),
+            'broker_name': property_data.get('broker_name'),
+            'broker_email': property_data.get('broker_email'),
+            'broker_phones': property_data.get('broker_phones'),
+            'agent_id': property_data.get('agent_id'),
+            'agent_name': property_data.get('agent_name'),
+            'agent_email': property_data.get('agent_email'),
+            'agent_phones': property_data.get('agent_phones'),
+            'office_name': property_data.get('office_name'),
+            'office_phones': property_data.get('office_phones')
+        }
+        
+        # Remove broker fields from main object
+        for key in list(property_data['broker_info'].keys()):
+            if key in property_data:
+                del property_data[key]
+        
+        return {
+            "success": True,
+            "data": property_data
+        }
+    finally:
+        conn.close()
+
+@app.get("/api/properties/{property_id}/audit", tags=["Properties"])
+async def get_property_audit(property_id: int):
+    """Get calculation audit data for a specific property"""
+    conn = get_db_connection()
+    try:
+        # Check if property exists
+        property_check = conn.execute(
+            "SELECT property_id FROM properties WHERE property_id = ?", 
+            (property_id,)
+        ).fetchone()
+        
+        if not property_check:
+            raise HTTPException(status_code=404, detail=f"Property ID {property_id} not found")
+        
+        # Query audit data
+        result = conn.execute(
+            "SELECT * FROM api_calculation_audit WHERE property_id = ?", 
+            (property_id,)
+        ).fetchone()
+        
+        if not result:
+            raise HTTPException(status_code=404, detail=f"No audit data available for property ID {property_id}")
+        
+        result_dict = dict(result)
+        
+        # Get cash flow projections
+        projections = {}
+        for year in range(1, 6):
+            year_data = {
+                'noi': result_dict.get(f'noi_year{year}'),
+                'ucf': result_dict.get(f'ucf_year{year}'),
+                'lcf': result_dict.get(f'lcf_year{year}')
+            }
+            projections[f'year{year}'] = year_data
+        
+        # Create structured response
+        audit_data = {
+            'property_id': result_dict['property_id'],
+            'property_info': {
+                'full_street_line': result_dict.get('full_street_line', ''),
+                'city': result_dict.get('city', ''),
+                'state': result_dict.get('state', ''),
+                'zip_code': result_dict.get('zip_code', 0)
+            },
+            'rental_income': {
+                'zori_monthly_rent': result_dict.get('zori_monthly_rent', 0),
+                'zori_annual_rent': result_dict.get('zori_annual_rent', 0),
+                'zori_growth_rate': result_dict.get('zori_growth_rate', 0),
+                'gross_rent_multiplier': result_dict.get('gross_rent_multiplier', 0)
+            },
+            'expenses': {
+                'tax_used': result_dict.get('tax_used', 0),
+                'hoa_fee_used': result_dict.get('hoa_fee_used', 0)
+            },
+            'mortgage': {
+                'down_payment_pct': result_dict.get('down_payment_pct', 0),
+                'interest_rate': result_dict.get('interest_rate', 0),
+                'loan_term': result_dict.get('loan_term', 0),
+                'loan_amount': result_dict.get('loan_amount', 0),
+                'monthly_payment': result_dict.get('monthly_payment', 0),
+                'annual_debt_service': result_dict.get('annual_debt_service', 0),
+                'final_loan_balance': result_dict.get('final_loan_balance', 0)
+            },
+            'returns': {
+                'cap_rate': result_dict.get('cap_rate', 0),
+                'exit_cap_rate': result_dict.get('exit_cap_rate', 0),
+                'exit_value': result_dict.get('exit_value', 0),
+                'equity_at_exit': result_dict.get('equity_at_exit', 0),
+                'irr': result_dict.get('irr', 0),
+                'cash_on_cash': result_dict.get('cash_on_cash', 0),
+                'total_return': result_dict.get('total_return', 0),
+                'investment_ranking': result_dict.get('investment_ranking', 0)
+            },
+            'projections': projections
+        }
+        
+        return {
+            "success": True,
+            "data": audit_data
+        }
+    finally:
+        conn.close()
 
 @app.get("/states/", tags=["Locations"], response_model=List[str])
 async def get_states():
@@ -523,7 +764,7 @@ async def get_properties(
     criteria: Optional[InvestmentCriteria] = None,
     state: Optional[str] = None,
     city: Optional[str] = None,
-    sort_by: str = "cap_rate",
+    sort_by: str = "investment_ranking",
     sort_desc: bool = True,
     pagination: Dict = Depends(pagination_params)
 ):
@@ -547,7 +788,8 @@ async def get_properties(
             hoa_fee, primary_photo, alt_photos, 
             cap_rate, cash_equity, cash_yield,
             zori_monthly_rent, zori_annual_rent, irr, 
-            cash_on_cash, lcf_year1, equity_at_exit, monthly_payment
+            cash_on_cash, lcf_year1, equity_at_exit, monthly_payment,
+            investment_ranking
         FROM properties 
         WHERE 1=1
         """
@@ -600,7 +842,7 @@ async def get_properties_by_city(
     city: str,
     state: Optional[str] = None,
     criteria: Optional[InvestmentCriteria] = None,
-    sort_by: str = "cap_rate",
+    sort_by: str = "investment_ranking",
     sort_desc: bool = True,
     pagination: Dict = Depends(pagination_params)
 ):
@@ -621,7 +863,8 @@ async def get_properties_by_city(
             hoa_fee, primary_photo, alt_photos, 
             cap_rate, cash_equity, cash_yield,
             zori_monthly_rent, zori_annual_rent, irr, 
-            cash_on_cash, lcf_year1, equity_at_exit, monthly_payment
+            cash_on_cash, lcf_year1, equity_at_exit, monthly_payment,
+            investment_ranking
         FROM properties 
         WHERE city = ?
         """
@@ -674,7 +917,7 @@ async def get_properties_by_city(
 async def get_properties_by_zipcode(
     zipcode: int = Path(..., description="ZIP code to search for"),
     criteria: Optional[InvestmentCriteria] = None,
-    sort_by: str = "cap_rate",
+    sort_by: str = "investment_ranking",
     sort_desc: bool = True,
     pagination: Dict = Depends(pagination_params)
 ):
@@ -695,7 +938,8 @@ async def get_properties_by_zipcode(
             hoa_fee, primary_photo, alt_photos, 
             cap_rate, cash_equity, cash_yield,
             zori_monthly_rent, zori_annual_rent, irr, 
-            cash_on_cash, lcf_year1, equity_at_exit, monthly_payment
+            cash_on_cash, lcf_year1, equity_at_exit, monthly_payment,
+            investment_ranking
         FROM properties 
         WHERE zip_code = ?
         """
@@ -759,7 +1003,8 @@ async def get_property_detail(property_id: int):
                 lcf_year1, lcf_year2, lcf_year3, lcf_year4, lcf_year5,
                 loan_amount, annual_debt_service, down_payment_pct, interest_rate, loan_term,
                 exit_cap_rate, exit_value, accumulated_cash_flow, 
-                days_on_mls, lot_sqft, parking_garage
+                days_on_mls, lot_sqft, parking_garage,
+                investment_ranking
             FROM properties 
             WHERE property_id = ?
             """,
@@ -788,7 +1033,8 @@ async def get_property_cash_flow_projection(property_id: int):
             lcf_year1, lcf_year2, lcf_year3, lcf_year4, lcf_year5,
             monthly_payment, annual_debt_service, cash_equity,
             accumulated_cash_flow, total_principal_paid, exit_value,
-            equity_at_exit, cash_on_cash, irr
+            equity_at_exit, cash_on_cash, irr,
+            investment_ranking
         FROM properties 
         WHERE property_id = ?
         """, (property_id,))
@@ -828,7 +1074,8 @@ async def get_property_cash_flow_projection(property_id: int):
             "exit_value": property_dict["exit_value"],
             "equity_at_exit": property_dict["equity_at_exit"],
             "cash_on_cash": property_dict["cash_on_cash"],
-            "irr": property_dict["irr"]
+            "irr": property_dict["irr"],
+            "investment_ranking": property_dict["investment_ranking"]
         }
         
         return result
@@ -1177,7 +1424,7 @@ async def compare_properties(property_ids: str = Query(..., description="Comma-s
             last_sold_date, assessed_value, estimated_value, tax, tax_history,
             zori_monthly_rent, cap_rate, cash_yield, irr, 
             cash_on_cash, lcf_year1, equity_at_exit, monthly_payment,
-            accumulated_cash_flow, cash_equity
+            accumulated_cash_flow, cash_equity, investment_ranking
         FROM properties 
         WHERE property_id IN ({placeholders})
         """

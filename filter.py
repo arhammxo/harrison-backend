@@ -2,8 +2,8 @@ import csv
 import os
 
 # Input and output file paths
-INPUT_FILE = 'investment_analysis_resultsTEST.csv'
-OUTPUT_FILE = 'filtered_investment_properties1.csv'
+INPUT_FILE = 'investment_analysis_resultsUPDATED.csv'
+OUTPUT_FILE = 'filtered_investment_propertiesUPDATED.csv'
 
 # Define essential fields that must have non-zero, non-null values
 ESSENTIAL_FIELDS = [

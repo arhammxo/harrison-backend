@@ -22,8 +22,8 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Database configuration
-DB_FILE = 'new_investment_properties.db'
-FILTERED_PROPERTIES_FILE = 'filtered_investment_properties1.csv'
+DB_FILE = 'final_investment_properties.db'
+FILTERED_PROPERTIES_FILE = 'filtered_investment_propertiesUPDATED.csv'
 ZILLOW_RENT_DATA_FILE = 'zillow_rent_data.csv'
 
 # Neighborhood quality factors - default values if ZORI calculation fails
