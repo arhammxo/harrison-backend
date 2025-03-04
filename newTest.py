@@ -549,6 +549,136 @@ def calculate_exit_cap_rate(entry_cap_rate, growth_rate, neighborhood_factor):
     # Ensure exit cap rate is reasonable (min 4%, max 10%)
     return min(0.10, max(0.04, exit_cap_rate))
 
+def calculate_property_ranking(row):
+    """
+    Calculate a comprehensive investment ranking (1-10) for a property.
+    Returns a float score and integer ranking.
+    """
+    try:
+        # Extract key metrics
+        cap_rate = float(row.get('cap_rate', 0) or 0)
+        cash_on_cash = float(row.get('cash_on_cash', 0) or 0)
+        irr = float(row.get('irr', 0) or 0)
+        grm = float(row.get('gross_rent_multiplier', 0) or 0)
+        down_payment_pct = float(row.get('down_payment_pct', 0) or 0)
+        interest_rate = float(row.get('interest_rate', 0) or 0)
+        growth_rate = float(row.get('zori_growth_rate', 0) or 0)
+        total_principal_paid = float(row.get('total_principal_paid', 0) or 0)
+        list_price = float(row.get('list_price', 0) or 0)
+        total_return = float(row.get('total_return', 0) or 0)
+        zip_code = str(int(float(row.get('zip_code', 0) or 0)))
+        
+        # Get neighborhood quality factor
+        neighborhood_factor = get_neighborhood_factor(zip_code)
+        
+        # 1. Financial Performance Score (40%)
+        
+        # Cap Rate Score (10%)
+        if cap_rate < 3:
+            cap_rate_score = 2 + (cap_rate / 3) * 2  # 2-4 points
+        elif cap_rate < 5:
+            cap_rate_score = 4 + ((cap_rate - 3) / 2) * 2  # 4-6 points
+        elif cap_rate < 7:
+            cap_rate_score = 6 + ((cap_rate - 5) / 2) * 2  # 6-8 points
+        else:
+            cap_rate_score = 8 + min(2, (cap_rate - 7) / 3)  # 8-10 points, capped at 10
+        
+        # Cash-on-Cash Return Score (15%)
+        if cash_on_cash < 0:
+            coc_score = 1 + (cash_on_cash + 15) / 15 * 2  # 1-3 points
+        elif cash_on_cash < 3:
+            coc_score = 3 + (cash_on_cash / 3) * 2  # 3-5 points
+        elif cash_on_cash < 6:
+            coc_score = 5 + ((cash_on_cash - 3) / 3) * 2  # 5-7 points
+        elif cash_on_cash < 9:
+            coc_score = 7 + ((cash_on_cash - 6) / 3) * 2  # 7-9 points
+        else:
+            coc_score = 9 + min(1, (cash_on_cash - 9) / 3)  # 9-10 points, capped at 10
+        
+        # IRR Score (15%)
+        if irr < 0:
+            irr_score = 1 + (irr + 25) / 25 * 2  # 1-3 points
+        elif irr < 5:
+            irr_score = 3 + (irr / 5) * 2  # 3-5 points
+        elif irr < 10:
+            irr_score = 5 + ((irr - 5) / 5) * 2  # 5-7 points
+        elif irr < 15:
+            irr_score = 7 + ((irr - 10) / 5) * 2  # 7-9 points
+        else:
+            irr_score = 9 + min(1, (irr - 15) / 10)  # 9-10 points, capped at 10
+        
+        # 2. Risk Assessment Score (30%)
+        
+        # Price-to-Rent Ratio Score (10%)
+        if grm > 35:
+            grm_score = 1 + min(2, (60 - grm) / 25)  # 1-3 points
+        elif grm > 25:
+            grm_score = 3 + ((35 - grm) / 10) * 2  # 3-5 points
+        elif grm > 20:
+            grm_score = 5 + ((25 - grm) / 5) * 2  # 5-7 points
+        elif grm > 15:
+            grm_score = 7 + ((20 - grm) / 5) * 2  # 7-9 points
+        else:
+            grm_score = 9 + min(1, (15 - grm) / 10)  # 9-10 points, capped at 10
+        
+        # Leverage Risk Score (10%)
+        # Higher down payment (less leverage) = higher score
+        leverage_risk_score = 5 + (down_payment_pct - 0.4) * 20  # 0.3=3, 0.4=5, 0.5=7, 0.6=9
+        # Adjust for interest rate (lower is better)
+        rate_adjustment = (8 - interest_rate) * 0.3  # +0.6 for 6%, 0 for 8%
+        leverage_risk_score = min(10, max(1, leverage_risk_score + rate_adjustment))
+        
+        # Location Quality Score (10%)
+        location_score = (neighborhood_factor - 0.75) * 40  # 0.75=0, 0.85=4, 0.95=8
+        location_score = min(10, max(1, location_score + 1))  # Scale to 1-10
+        
+        # 3. Growth Potential Score (30%)
+        
+        # Appreciation Potential Score (10%)
+        growth_score = 5 + (growth_rate - 3) * 0.7  # 3%=5, 7%=7.8
+        growth_score = min(10, max(1, growth_score))
+        
+        # Equity Building Score (10%)
+        # Calculate principal paydown as % of purchase price
+        if list_price > 0:
+            principal_pct = (total_principal_paid / list_price) * 100
+            equity_score = 1 + principal_pct * 0.5  # 2%=2, 6%=4, 10%=6, 14%=8, 18%=10
+            equity_score = min(10, max(1, equity_score))
+        else:
+            equity_score = 5  # Default
+        
+        # Total Return Score (10%)
+        if total_return <= 1:
+            return_score = 1 + total_return * 3  # 0=1, 0.33=2, 0.67=3, 1=4
+        elif total_return <= 1.5:
+            return_score = 4 + (total_return - 1) * 4  # 1=4, 1.25=5, 1.5=6
+        elif total_return <= 2:
+            return_score = 6 + (total_return - 1.5) * 4  # 1.5=6, 1.75=7, 2=8
+        else:
+            return_score = 8 + min(2, (total_return - 2))  # 2=8, 3=9, 4+=10
+        
+        # Calculate weighted total score
+        financial_score = (cap_rate_score * 0.10) + (coc_score * 0.15) + (irr_score * 0.15)
+        risk_score = (grm_score * 0.10) + (leverage_risk_score * 0.10) + (location_score * 0.10)
+        growth_score = (growth_score * 0.10) + (equity_score * 0.10) + (return_score * 0.10)
+        
+        total_score = financial_score + risk_score + growth_score
+        
+        # Convert to 1-10 scale if needed (though it should already be close)
+        total_score = min(10, max(1, total_score))
+        
+        # Round to one decimal place
+        total_score = round(total_score, 1)
+        
+        # Convert to integer ranking 1-10
+        ranking = min(10, max(1, round(total_score)))
+        
+        return total_score, ranking
+        
+    except Exception as e:
+        print(f"Error calculating property ranking: {e}")
+        return 5.0, 5  # Default middle ranking
+
 # =====================================================================
 # RENTAL INCOME ESTIMATION FUNCTIONS
 # =====================================================================
@@ -727,15 +857,29 @@ def calculate_cash_flow_metrics(row, is_zori_based=True):
         metrics['transaction_cost'] = transaction_cost
         metrics['cash_equity'] = cash_equity
         
-        # Calculate NOI for 5 years
+        # Calculate NOI for 5 years with all standard operating expenses
         current_rent = annual_rent
         for year in range(1, 6):
-            noi = current_rent - (hoa_fee * 12)
+            # Calculate standard operating expenses
+            vacancy = current_rent * 0.05  # 5% vacancy rate
+            management = current_rent * 0.08  # 8% property management fee
+            maintenance = current_rent * 0.05  # 5% for maintenance
+            insurance = list_price * 0.005  # Annual insurance at 0.5% of property value
+            
+            # Total expenses
+            total_expenses = (hoa_fee * 12) + vacancy + management + maintenance + insurance
+            
+            # Calculate NOI
+            noi = current_rent - total_expenses
             metrics[f'noi_year{year}'] = noi
             current_rent *= (1 + growth_rate)  # Apply growth rate
         
-        # Calculate cap rate
-        metrics['cap_rate'] = (metrics['noi_year1'] / list_price) * 100 if list_price > 0 else 0
+        # Calculate cap rate with reasonable bounds
+        if list_price > 0:
+            raw_cap_rate = (metrics['noi_year1'] / list_price) * 100
+            metrics['cap_rate'] = min(15, max(-5, raw_cap_rate))  # Limit to reasonable range
+        else:
+            metrics['cap_rate'] = 0
         
         # Calculate unlevered cash flow (UCF)
         for year in range(1, 6):
@@ -864,21 +1008,45 @@ def calculate_investment_returns(row, metrics):
         equity_at_exit = metrics['exit_value'] - final_loan_balance + accumulated_cash_flow
         metrics['equity_at_exit'] = equity_at_exit
         
-        # Calculate cash-on-cash return
+        # Calculate annual cash-on-cash return (first year)
         cash_equity = metrics.get('cash_equity', 0)
         if cash_equity > 0:
-            cash_on_cash = equity_at_exit / cash_equity
-            metrics['cash_on_cash'] = cash_on_cash
+            # Calculate first-year cash-on-cash return (standard definition)
+            first_year_coc = (metrics.get('lcf_year1', 0) / cash_equity) * 100
+            metrics['cash_on_cash'] = min(25, max(-15, first_year_coc))  # Apply reasonable bounds
             
-            # Calculate IRR
-            if cash_on_cash > 0:
-                irr = (cash_on_cash ** (1/5)) - 1  # 5-year holding period
-                metrics['irr'] = irr * 100  # Store as percentage
-            else:
-                metrics['irr'] = 0
+            # Keep the total return (renamed for clarity)
+            total_return = equity_at_exit / cash_equity
+            metrics['total_return'] = total_return
+            
+            # Calculate IRR using proper discounted cash flow
+            try:
+                # Create cash flow array (negative initial investment, followed by annual cash flows, plus terminal value)
+                cash_flows = [-cash_equity]  # Initial investment (negative)
+                
+                # Add annual cash flows
+                for year in range(1, 6):
+                    lcf_key = f'lcf_year{year}'
+                    if lcf_key in metrics:
+                        cash_flows.append(metrics[lcf_key])
+                
+                # Add exit proceed to final year cash flow
+                if len(cash_flows) >= 6:  # Make sure we have enough years
+                    cash_flows[5] += metrics['exit_value'] - metrics['final_loan_balance']
+                
+                # Calculate IRR
+                if any(cf > 0 for cf in cash_flows[1:]):  # At least one positive cash flow
+                    irr = npf.irr(cash_flows)
+                    # Apply reasonable bounds
+                    metrics['irr'] = min(35, max(-25, irr * 100))  # Store as percentage with bounds
+                else:
+                    metrics['irr'] = -25  # Minimum IRR for clearly poor investments
+            except:
+                metrics['irr'] = 0  # Default for calculation errors
         else:
             metrics['cash_on_cash'] = 0
             metrics['irr'] = 0
+            metrics['total_return'] = 0
         
         return metrics
     
@@ -922,6 +1090,13 @@ def process_rental_estimates_for_file(input_file, output_file, zori_data):
         
         count = 0
         for row in reader:
+            # Ensure list_price is an integer
+            if 'list_price' in row and row['list_price']:
+                try:
+                    row['list_price'] = int(float(row['list_price']))
+                except (ValueError, TypeError):
+                    pass
+                    
             # Calculate ZORI-based rental estimate
             monthly_rent, annual_rent, growth_rate, projections, grm = estimate_rental_income(
                 row, zori_by_zip, growth_rates_by_zip, avg_seasonality, state_averages)
@@ -981,6 +1156,12 @@ def merge_csv_files(input_files, output_file):
             with open(file_path, 'r', newline='', encoding='utf-8') as infile:
                 reader = csv.DictReader(infile)
                 for row in reader:
+                    # Ensure list_price is an integer
+                    if 'list_price' in row and row['list_price']:
+                        try:
+                            row['list_price'] = int(float(row['list_price']))
+                        except (ValueError, TypeError):
+                            pass
                     writer.writerow(row)
                     total_rows += 1
     
@@ -1015,6 +1196,13 @@ def process_investment_metrics_for_file(input_file, output_file):
         
         count = 0
         for row in reader:
+            # Ensure list_price is an integer
+            if 'list_price' in row and row['list_price']:
+                try:
+                    row['list_price'] = int(float(row['list_price']))
+                except (ValueError, TypeError):
+                    pass
+                    
             # Calculate cash flow metrics
             metrics = calculate_cash_flow_metrics(row, is_zori_based=True)
             
@@ -1051,7 +1239,8 @@ def process_final_metrics_for_file(input_file, output_file):
             'loan_balance_year4', 'loan_balance_year5',
             'lcf_year1', 'lcf_year2', 'lcf_year3', 'lcf_year4', 'lcf_year5',
             'total_principal_paid', 'final_loan_balance', 'accumulated_cash_flow',
-            'exit_cap_rate', 'exit_value', 'equity_at_exit', 'cash_on_cash', 'irr'
+            'exit_cap_rate', 'exit_value', 'equity_at_exit', 'cash_on_cash', 'irr',
+            'total_return'  # Added the new total_return field
         ]
         
         fieldnames = reader.fieldnames + additional_fields
@@ -1060,6 +1249,13 @@ def process_final_metrics_for_file(input_file, output_file):
         
         count = 0
         for row in reader:
+            # Ensure list_price is an integer
+            if 'list_price' in row and row['list_price']:
+                try:
+                    row['list_price'] = int(float(row['list_price']))
+                except (ValueError, TypeError):
+                    pass
+                    
             # Extract metrics to build the metrics dictionary
             metrics = {}
             # First, get all the UCF values
@@ -1104,6 +1300,83 @@ def process_final_metrics_for_file(input_file, output_file):
     
     print(f"Completed final investment metrics for {count} properties")
     return count
+
+def filter_investment_outliers(input_file, output_file):
+    """
+    Filter properties with unrealistic investment metrics and add property ranking.
+    Creates a new CSV with only valid properties.
+    """
+    print(f"Filtering investment outliers from {input_file}...")
+    
+    with open(input_file, 'r', newline='', encoding='utf-8') as infile, \
+         open(output_file, 'w', newline='', encoding='utf-8') as outfile:
+        
+        reader = csv.DictReader(infile)
+        
+        # Add ranking fields to fieldnames
+        fieldnames = reader.fieldnames + ['investment_score', 'investment_ranking']
+        writer = csv.DictWriter(outfile, fieldnames=fieldnames)
+        writer.writeheader()
+        
+        total_count = 0
+        filtered_count = 0
+        
+        for row in reader:
+            total_count += 1
+            
+            # Ensure list_price is an integer
+            if 'list_price' in row and row['list_price']:
+                try:
+                    row['list_price'] = int(float(row['list_price']))
+                except (ValueError, TypeError):
+                    pass
+            
+            # Check if property has unrealistic metrics
+            try:
+                cap_rate = float(row.get('cap_rate', 0) or 0)
+                irr = float(row.get('irr', 0) or 0)
+                cash_on_cash = float(row.get('cash_on_cash', 0) or 0)
+                grm = float(row.get('gross_rent_multiplier', 0) or 0)
+                
+                # Skip properties with clearly problematic metrics
+                if (abs(cap_rate) > 15 or 
+                    abs(irr) > 35 or 
+                    abs(cash_on_cash) > 25 or
+                    grm <= 5 or grm > 60):
+                    filtered_count += 1
+                    continue
+                    
+                # Additional filters for reasonable metrics
+                # Skip properties with extremely negative cash flows
+                lcf_year1 = float(row.get('lcf_year1', 0) or 0)
+                ucf_year1 = float(row.get('ucf_year1', 0) or 0)
+                if lcf_year1 < -50000 or ucf_year1 < -30000:
+                    filtered_count += 1
+                    continue
+                
+                # Skip properties with unrealistic price-to-rent ratios
+                list_price = float(row.get('list_price', 0) or 0)
+                annual_rent = float(row.get('annual_rent', 0) or 0)
+                if annual_rent > 0 and (list_price / annual_rent > 60 or list_price / annual_rent < 5):
+                    filtered_count += 1
+                    continue
+                
+                # Calculate property ranking
+                investment_score, investment_ranking = calculate_property_ranking(row)
+                row['investment_score'] = investment_score
+                row['investment_ranking'] = investment_ranking
+                
+                # Property passed all filters - include it
+                writer.writerow(row)
+                
+            except (ValueError, TypeError, ZeroDivisionError):
+                # Skip rows with calculation errors
+                filtered_count += 1
+                continue
+    
+    print(f"Filtered {filtered_count} properties out of {total_count} total")
+    print(f"Saved {total_count - filtered_count} valid properties to {output_file}")
+    return total_count - filtered_count
 
 def process_rental_estimates():
     """
@@ -1155,18 +1428,6 @@ def process_investment_metrics():
     
     print("Completed cash flow metrics calculation")
 
-def process_final_metrics():
-    """
-    Process properties with cash flow metrics and calculate final investment returns.
-    Saves results to the final output file.
-    """
-    print("Starting final investment returns calculation...")
-    
-    # Process the merged property data with cash flow metrics
-    process_final_metrics_for_file(TEMP_MERGED_CASH_FLOW, OUTPUT_FINAL_FILE)
-    
-    print("Completed final investment metrics calculation")
-
 def clean_up_temp_files():
     """Remove temporary files and directory."""
     print("Cleaning up temporary files...")
@@ -1209,9 +1470,15 @@ def main():
         process_investment_metrics()
         
         # Step 3: Calculate final investment returns
-        process_final_metrics()
+        temp_final_file = OUTPUT_FINAL_FILE + '.temp'
+        process_final_metrics_for_file(TEMP_MERGED_CASH_FLOW, temp_final_file)
+        
+        # Step 4: Filter out properties with unrealistic metrics
+        filter_investment_outliers(temp_final_file, OUTPUT_FINAL_FILE)
         
         # Clean up
+        if os.path.exists(temp_final_file):
+            os.remove(temp_final_file)
         clean_up_temp_files()
         
         end_time = datetime.now()

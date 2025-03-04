@@ -8,6 +8,7 @@ from datetime import datetime
 import glob
 import numpy as np
 import re
+import json
 
 # Configure logging
 logging.basicConfig(
@@ -21,26 +22,8 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Database configuration
-DB_FILE = 'investment_properties.db'
-PROPERTY_DATA_FILES = [
-    'for_sale_20250227_0226.csv',
-    'for_sale_20250227_0235.csv',
-    'for_sale_20250227_0243.csv',
-    'for_sale_20250227_0244.csv',
-    'for_sale_20250227_0245.csv',
-    'for_sale_20250227_0438.csv',
-    'for_sale_20250227_0459.csv',
-    'for_sale_20250227_0502.csv',
-    'for_sale_20250227_0625.csv',
-    'for_sale_20250227_0629.csv',
-    'for_sale_20250227_0629.csv',
-    'for_sale_20250227_0638.csv',
-    'for_sale_20250227_0643.csv',
-    'for_sale_20250227_0659.csv',
-    'for_sale_20250227_0702.csv',
-    'for_sale_20250227_0705.csv'
-]
-INVESTMENT_RESULTS_FILE = 'investment_analysis_results.csv'
+DB_FILE = 'new_investment_properties.db'
+FILTERED_PROPERTIES_FILE = 'filtered_investment_properties1.csv'
 ZILLOW_RENT_DATA_FILE = 'zillow_rent_data.csv'
 
 # Neighborhood quality factors - default values if ZORI calculation fails
@@ -51,27 +34,15 @@ NEIGHBORHOOD_QUALITY = {
 
 def setup_database():
     """
-    Set up the SQLite database with investment property data from CSV.
+    Set up the SQLite database with filtered investment property data from CSV.
     Creates tables, imports data, and adds necessary indices.
     """
     start_time = datetime.now()
     logger.info(f"Starting database setup at {start_time}")
     
-    # Check if CSV files exist
-    if not os.path.exists(INVESTMENT_RESULTS_FILE):
-        logger.error(f"Investment results file not found: {INVESTMENT_RESULTS_FILE}")
-        sys.exit(1)
-    
-    # Check property files
-    existing_property_files = []
-    for file in PROPERTY_DATA_FILES:
-        if os.path.exists(file):
-            existing_property_files.append(file)
-        else:
-            logger.warning(f"Property file not found: {file}")
-    
-    if not existing_property_files:
-        logger.error("No property data files found.")
+    # Check if filtered properties file exists
+    if not os.path.exists(FILTERED_PROPERTIES_FILE):
+        logger.error(f"Filtered properties file not found: {FILTERED_PROPERTIES_FILE}")
         sys.exit(1)
     
     # Check for ZORI data
@@ -91,17 +62,9 @@ def setup_database():
     try:
         cursor = conn.cursor()
         
-        # First, process property files
-        logger.info("Processing property data files...")
-        properties_df = process_property_files(existing_property_files)
-        
-        # Then process investment results
-        logger.info(f"Processing investment results: {INVESTMENT_RESULTS_FILE}")
-        investment_df = pd.read_csv(INVESTMENT_RESULTS_FILE)
-        
-        # Merge property data with investment results
-        logger.info("Merging property and investment data...")
-        merged_df = merge_property_and_investment_data(properties_df, investment_df)
+        # Load filtered properties data
+        logger.info(f"Loading filtered properties data: {FILTERED_PROPERTIES_FILE}")
+        properties_df = pd.read_csv(FILTERED_PROPERTIES_FILE)
         
         # Process ZORI data if available
         zori_quality_factors = {}
@@ -119,12 +82,19 @@ def setup_database():
             # Create ZORI neighborhood quality table
             create_neighborhood_quality_table(conn, zori_quality_factors)
         
+        # Prepare properties data for database import
+        logger.info("Preparing properties data...")
+        properties_df = prepare_filtered_properties_data(properties_df)
+        
         # Create main properties table with all property and investment data
         logger.info("Creating properties table...")
-        merged_df.to_sql('properties', conn, if_exists='replace', index=False)
+        properties_df.to_sql('properties', conn, if_exists='replace', index=False)
         
         # Add any missing required fields
         ensure_required_fields(conn)
+        
+        # Create calculation audit tables
+        create_calculation_audit_tables(conn, properties_df)
         
         # Create indices for faster querying
         create_database_indices(conn)
@@ -134,6 +104,9 @@ def setup_database():
         
         # Create derived tables for analytics
         create_derived_tables(conn)
+        
+        # Create API-specific views for quick access
+        create_api_views(conn)
         
         # Commit all changes
         conn.commit()
@@ -164,113 +137,55 @@ def setup_database():
         conn.close()
         raise
 
-def process_property_files(files):
+def prepare_filtered_properties_data(df):
     """
-    Read multiple property CSV files and combine them into a single DataFrame.
+    Prepare filtered properties data for database import.
     
     Args:
-        files: List of property data CSV files
+        df: DataFrame with filtered properties data
         
     Returns:
-        Combined DataFrame with all property data
+        Prepared DataFrame ready for database import
     """
-    all_properties = []
-    
-    for file in files:
-        logger.info(f"Reading property file: {file}")
-        df = pd.read_csv(file)
-        logger.info(f"  - File contains {len(df)} properties")
-        all_properties.append(df)
-    
-    # Combine all DataFrames
-    combined_df = pd.concat(all_properties, ignore_index=True)
-    logger.info(f"Combined {len(combined_df)} properties from {len(files)} files")
-    
-    # Drop duplicates based on property_id
-    original_count = len(combined_df)
-    combined_df = combined_df.drop_duplicates(subset=['property_id'])
-    dupes_removed = original_count - len(combined_df)
-    if dupes_removed > 0:
-        logger.info(f"Removed {dupes_removed} duplicate properties")
+    logger.info(f"Preparing {len(df)} filtered investment properties")
     
     # Basic cleaning
-    numeric_cols = combined_df.select_dtypes(include=['number']).columns
-    string_cols = combined_df.select_dtypes(include=['object']).columns
+    numeric_cols = df.select_dtypes(include=['number']).columns
+    string_cols = df.select_dtypes(include=['object']).columns
     
     # Fill numeric columns with 0
-    combined_df[numeric_cols] = combined_df[numeric_cols].fillna(0)
+    df[numeric_cols] = df[numeric_cols].fillna(0)
     
     # Fill string columns with empty string
-    combined_df[string_cols] = combined_df[string_cols].fillna('')
+    df[string_cols] = df[string_cols].fillna('')
     
     # Ensure zip_code is integer
-    if 'zip_code' in combined_df.columns:
-        combined_df['zip_code'] = combined_df['zip_code'].astype(int)
+    if 'zip_code' in df.columns:
+        df['zip_code'] = df['zip_code'].astype(int)
     
-    return combined_df
-
-def merge_property_and_investment_data(properties_df, investment_df):
-    """
-    Merge property data with investment metrics.
-    
-    Args:
-        properties_df: DataFrame with property details
-        investment_df: DataFrame with investment metrics
+    # Create combined bathroom count if not present
+    if 'baths' not in df.columns and 'full_baths' in df.columns and 'half_baths' in df.columns:
+        df['baths'] = df['full_baths'] + 0.5 * df['half_baths']
         
-    Returns:
-        Merged DataFrame with all data
-    """
-    # Identify key columns for merging
-    merge_columns = ['property_id']
-    
-    # If property_id is not in investment_df, try other combinations
-    if 'property_id' not in investment_df.columns:
-        potential_keys = []
+    # Ensure investment_ranking is available
+    if 'investment_ranking' not in df.columns and 'investment_score' in df.columns:
+        df['investment_ranking'] = df['investment_score'].round().astype(int)
         
-        if all(col in investment_df.columns for col in ['full_street_line', 'city', 'state', 'zip_code']):
-            potential_keys = ['full_street_line', 'city', 'state', 'zip_code']
-        elif all(col in investment_df.columns for col in ['street', 'city', 'state', 'zip_code']):
-            potential_keys = ['street', 'city', 'state', 'zip_code']
+    # Create complete address field if not present
+    if 'full_address' not in df.columns:
+        df['full_address'] = df.apply(
+            lambda x: f"{x['full_street_line']}, {x['city']}, {x['state']} {x['zip_code']}",
+            axis=1
+        )
         
-        if potential_keys:
-            merge_columns = potential_keys
-            logger.info(f"Using alternative merge keys: {potential_keys}")
-        else:
-            logger.warning("Cannot identify reliable merge keys. Using property_id and some properties may be missed.")
+    # Remove any duplicate property_ids if they exist
+    if 'property_id' in df.columns:
+        initial_count = len(df)
+        df = df.drop_duplicates(subset=['property_id'])
+        if len(df) < initial_count:
+            logger.info(f"Removed {initial_count - len(df)} duplicate properties")
     
-    # Perform merge
-    merged_df = pd.merge(properties_df, investment_df, on=merge_columns, how='left', suffixes=('', '_inv'))
-    
-    # Log merge statistics
-    match_count = merged_df['list_price_inv'].notna().sum()
-    logger.info(f"Merged {match_count} of {len(properties_df)} properties with investment data")
-    
-    # Clean up duplicate columns
-    duplicate_cols = [col for col in merged_df.columns if col.endswith('_inv')]
-    merge_cols_set = set(merge_columns)
-    
-    for col in duplicate_cols:
-        base_col = col[:-4]  # Remove _inv suffix
-        if base_col not in merge_cols_set:
-            # Use _inv column value if base column is NaN or 0
-            merged_df[base_col] = merged_df[base_col].fillna(merged_df[col])
-            
-            # If numeric, prefer non-zero values
-            if pd.api.types.is_numeric_dtype(merged_df[base_col]):
-                mask = (merged_df[base_col] == 0) & (merged_df[col] != 0)
-                merged_df.loc[mask, base_col] = merged_df.loc[mask, col]
-        
-        # Drop the duplicate column
-        merged_df = merged_df.drop(columns=[col])
-    
-    # Clean up NaN values
-    numeric_cols = merged_df.select_dtypes(include=['number']).columns
-    string_cols = merged_df.select_dtypes(include=['object']).columns
-    
-    merged_df[numeric_cols] = merged_df[numeric_cols].fillna(0)
-    merged_df[string_cols] = merged_df[string_cols].fillna('')
-    
-    return merged_df
+    return df
 
 def process_zori_data(zori_file):
     """
@@ -441,6 +356,97 @@ def create_neighborhood_quality_table(conn, quality_factors):
     except Exception as e:
         logger.error(f"Error creating neighborhood quality table: {e}")
 
+def create_calculation_audit_tables(conn, properties_df):
+    """
+    Create tables to store calculation inputs and outputs for auditing purposes.
+    
+    Args:
+        conn: SQLite connection
+        properties_df: DataFrame with property data
+    """
+    logger.info("Creating calculation audit tables...")
+    
+    try:
+        cursor = conn.cursor()
+        
+        # Create rental income calculation audit table
+        columns = [
+            'property_id', 'list_price', 'beds', 'full_baths', 'half_baths', 'sqft', 
+            'year_built', 'style', 'zip_code', 'state', 'neighborhood_factor', 
+            'bed_bath_factor', 'size_factor', 'condition_factor', 'property_type_factor',
+            'zori_monthly_rent', 'zori_annual_rent', 'zori_growth_rate', 'gross_rent_multiplier'
+        ]
+        
+        rental_columns = [col for col in columns if col in properties_df.columns]
+        rental_df = properties_df[rental_columns].copy()
+        
+        # Add calculated fields for complete auditing
+        if 'zori_monthly_rent' in rental_df.columns:
+            rental_df['is_zori_based'] = True
+        else:
+            rental_df['is_zori_based'] = False
+            
+        rental_df.to_sql('rental_income_audit', conn, if_exists='replace', index=False)
+        
+        # Create cash flow calculation audit table
+        cf_columns = [
+            'property_id', 'list_price', 'zori_monthly_rent', 'zori_annual_rent',
+            'tax', 'tax_used', 'hoa_fee', 'hoa_fee_used', 'down_payment_pct',
+            'transaction_cost', 'cash_equity', 'noi_year1', 'cap_rate', 'ucf'
+        ]
+        
+        cf_columns = [col for col in cf_columns if col in properties_df.columns]
+        cf_df = properties_df[cf_columns].copy()
+        cf_df.to_sql('cash_flow_audit', conn, if_exists='replace', index=False)
+        
+        # Create mortgage calculation audit table
+        mortgage_columns = [
+            'property_id', 'list_price', 'down_payment_pct', 'transaction_cost',
+            'cash_equity', 'interest_rate', 'loan_term', 'loan_amount',
+            'monthly_payment', 'annual_debt_service', 'principal_paid_year1',
+            'loan_balance_year1', 'total_principal_paid', 'final_loan_balance',
+            'accumulated_cash_flow'
+        ]
+        
+        mortgage_columns = [col for col in mortgage_columns if col in properties_df.columns]
+        mortgage_df = properties_df[mortgage_columns].copy()
+        mortgage_df.to_sql('mortgage_audit', conn, if_exists='replace', index=False)
+        
+        # Create investment return audit table
+        returns_columns = [
+            'property_id', 'cap_rate', 'zori_growth_rate', 'exit_cap_rate',
+            'exit_value', 'equity_at_exit', 'cash_on_cash', 'irr', 'total_return',
+            'investment_score', 'investment_ranking'
+        ]
+        
+        returns_columns = [col for col in returns_columns if col in properties_df.columns]
+        returns_df = properties_df[returns_columns].copy()
+        returns_df.to_sql('investment_returns_audit', conn, if_exists='replace', index=False)
+        
+        # Create cash flow projections audit table
+        projections_columns = [
+            'property_id', 'list_price', 'zori_monthly_rent', 
+            'noi_year1', 'noi_year2', 'noi_year3', 'noi_year4', 'noi_year5',
+            'ucf_year1', 'ucf_year2', 'ucf_year3', 'ucf_year4', 'ucf_year5',
+            'lcf_year1', 'lcf_year2', 'lcf_year3', 'lcf_year4', 'lcf_year5'
+        ]
+        
+        projections_columns = [col for col in projections_columns if col in properties_df.columns]
+        proj_df = properties_df[projections_columns].copy()
+        proj_df.to_sql('cash_flow_projections_audit', conn, if_exists='replace', index=False)
+        
+        # Create indices on property_id for all audit tables
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_rental_audit_property_id ON rental_income_audit(property_id)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_cashflow_audit_property_id ON cash_flow_audit(property_id)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_mortgage_audit_property_id ON mortgage_audit(property_id)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_returns_audit_property_id ON investment_returns_audit(property_id)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_projections_audit_property_id ON cash_flow_projections_audit(property_id)')
+        
+        logger.info("Created calculation audit tables successfully")
+        
+    except Exception as e:
+        logger.error(f"Error creating calculation audit tables: {e}")
+
 def create_database_indices(conn):
     """
     Create indices for faster querying.
@@ -459,11 +465,20 @@ def create_database_indices(conn):
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_zip_code ON properties(zip_code)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_state ON properties(state)')
     
+    # Create indices for filtering by location combinations
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_city_state ON properties(city, state)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_zip_city_state ON properties(zip_code, city, state)')
+    
     # Create indices for sorting by investment metrics
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_cap_rate ON properties(cap_rate)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_cash_yield ON properties(cash_yield)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_irr ON properties(irr)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_cash_on_cash ON properties(cash_on_cash)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_total_return ON properties(total_return)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_investment_ranking ON properties(investment_ranking)')
+    
+    # Create index for price per square foot
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_price_per_sqft ON properties(price_per_sqft)')
     
     # Create index for monthly rent
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_monthly_rent ON properties(zori_monthly_rent)')
@@ -488,6 +503,15 @@ def create_database_indices(conn):
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_sqft ON properties(sqft)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_style ON properties(style)')
     
+    # Composite indices for combined filtering and sorting
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_city_investment_ranking ON properties(city, investment_ranking)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_zip_investment_ranking ON properties(zip_code, investment_ranking)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_state_investment_ranking ON properties(state, investment_ranking)')
+    
+    # Composite indices for price range filtering with location
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_city_price ON properties(city, list_price)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_zip_price ON properties(zip_code, list_price)')
+    
     # Commit changes
     conn.commit()
     logger.info("Database indices created successfully")
@@ -502,14 +526,30 @@ def create_materialized_views(conn):
     logger.info("Creating materialized views...")
     cursor = conn.cursor()
     
-    # View for top investment properties by cap rate
+    # View for top investment properties by investment_ranking
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS view_top_ranked_properties AS
+    SELECT 
+        property_id, full_street_line, city, state, zip_code,
+        beds, full_baths, half_baths, sqft, list_price, 
+        zori_monthly_rent, cap_rate, cash_yield, irr, cash_on_cash,
+        total_return, equity_at_exit, lcf_year1, investment_ranking,
+        primary_photo, broker_name, broker_id
+    FROM properties
+    WHERE investment_ranking > 0
+    ORDER BY investment_ranking DESC, cap_rate DESC
+    LIMIT 1000
+    ''')
+    
+    # View for top cap rate properties
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS view_top_cap_rate AS
     SELECT 
         property_id, full_street_line, city, state, zip_code,
         beds, full_baths, half_baths, sqft, list_price, 
         zori_monthly_rent, cap_rate, cash_yield, irr, cash_on_cash,
-        equity_at_exit, lcf_year1
+        total_return, equity_at_exit, lcf_year1, investment_ranking,
+        primary_photo, broker_name, broker_id
     FROM properties
     WHERE cap_rate > 0
     ORDER BY cap_rate DESC
@@ -523,25 +563,12 @@ def create_materialized_views(conn):
         property_id, full_street_line, city, state, zip_code,
         beds, full_baths, half_baths, sqft, list_price,
         zori_monthly_rent, cap_rate, cash_yield, irr, cash_on_cash,
-        lcf_year1, lcf_year2, lcf_year3, lcf_year4, lcf_year5,
-        accumulated_cash_flow
+        total_return, lcf_year1, lcf_year2, lcf_year3, lcf_year4, lcf_year5,
+        accumulated_cash_flow, investment_ranking,
+        primary_photo, broker_name, broker_id
     FROM properties
     WHERE lcf_year1 > 0
     ORDER BY lcf_year1 DESC
-    LIMIT 1000
-    ''')
-    
-    # View for top IRR properties
-    cursor.execute('''
-    CREATE TABLE IF NOT EXISTS view_top_irr AS
-    SELECT 
-        property_id, full_street_line, city, state, zip_code,
-        beds, full_baths, half_baths, sqft, list_price,
-        zori_monthly_rent, cap_rate, cash_yield, irr, cash_on_cash,
-        equity_at_exit
-    FROM properties
-    WHERE irr > 0
-    ORDER BY irr DESC
     LIMIT 1000
     ''')
     
@@ -552,28 +579,26 @@ def create_materialized_views(conn):
         property_id, full_street_line, city, state, zip_code,
         beds, full_baths, half_baths, sqft, list_price,
         zori_monthly_rent, cap_rate, cash_yield, irr, cash_on_cash,
-        cash_equity, equity_at_exit
+        total_return, cash_equity, equity_at_exit, investment_ranking,
+        primary_photo, broker_name, broker_id
     FROM properties
     WHERE cash_on_cash > 0
     ORDER BY cash_on_cash DESC
     LIMIT 1000
     ''')
     
-    # View for luxury properties (high end of market)
+    # View for top total return properties
     cursor.execute('''
-    CREATE TABLE IF NOT EXISTS view_luxury_properties AS
+    CREATE TABLE IF NOT EXISTS view_top_total_return AS
     SELECT 
         property_id, full_street_line, city, state, zip_code,
         beds, full_baths, half_baths, sqft, list_price,
-        zori_monthly_rent, cap_rate, cash_yield, irr, cash_on_cash
+        zori_monthly_rent, cap_rate, cash_yield, irr, cash_on_cash,
+        total_return, cash_equity, equity_at_exit, investment_ranking,
+        primary_photo, broker_name, broker_id
     FROM properties
-    WHERE list_price > (SELECT percentile FROM 
-                        (SELECT DISTINCT list_price as value, 
-                         PERCENT_RANK() OVER (ORDER BY list_price) AS percentile
-                         FROM properties)
-                        WHERE percentile >= 0.9
-                        LIMIT 1)
-    ORDER BY list_price DESC
+    WHERE total_return > 0
+    ORDER BY total_return DESC
     LIMIT 1000
     ''')
     
@@ -635,9 +660,11 @@ def create_derived_tables(conn):
             AVG(cash_yield) as avg_cash_yield,
             AVG(irr) as avg_irr,
             AVG(cash_on_cash) as avg_cash_on_cash,
+            AVG(total_return) as avg_total_return,
             AVG(price_per_sqft) as avg_price_per_sqft,
             AVG(lcf_year1) as avg_annual_cash_flow,
-            AVG(zori_growth_rate) as avg_rent_growth_rate
+            AVG(zori_growth_rate) as avg_rent_growth_rate,
+            AVG(investment_ranking) as avg_investment_ranking
         FROM properties
         GROUP BY city, state
         HAVING COUNT(*) >= 5
@@ -660,9 +687,11 @@ def create_derived_tables(conn):
             AVG(cash_yield) as avg_cash_yield,
             AVG(irr) as avg_irr,
             AVG(cash_on_cash) as avg_cash_on_cash,
+            AVG(total_return) as avg_total_return,
             AVG(price_per_sqft) as avg_price_per_sqft,
             AVG(lcf_year1) as avg_annual_cash_flow,
-            AVG(zori_growth_rate) as avg_rent_growth_rate
+            AVG(zori_growth_rate) as avg_rent_growth_rate,
+            AVG(investment_ranking) as avg_investment_ranking
         FROM properties
         GROUP BY zip_code, city, state
         HAVING COUNT(*) >= 3
@@ -681,7 +710,9 @@ def create_derived_tables(conn):
             AVG(cash_yield) as avg_cash_yield,
             AVG(irr) as avg_irr,
             AVG(cash_on_cash) as avg_cash_on_cash,
-            AVG(lcf_year1) as avg_annual_cash_flow
+            AVG(total_return) as avg_total_return,
+            AVG(lcf_year1) as avg_annual_cash_flow,
+            AVG(investment_ranking) as avg_investment_ranking
         FROM properties
         WHERE style IS NOT NULL AND style != ''
         GROUP BY style
@@ -701,7 +732,9 @@ def create_derived_tables(conn):
             AVG(cash_yield) as avg_cash_yield,
             AVG(irr) as avg_irr,
             AVG(cash_on_cash) as avg_cash_on_cash,
-            AVG(lcf_year1) as avg_annual_cash_flow
+            AVG(total_return) as avg_total_return,
+            AVG(lcf_year1) as avg_annual_cash_flow,
+            AVG(investment_ranking) as avg_investment_ranking
         FROM properties
         WHERE beds > 0
         GROUP BY beds
@@ -723,68 +756,13 @@ def create_derived_tables(conn):
             AVG(cash_yield) as avg_cash_yield,
             AVG(irr) as avg_irr,
             AVG(cash_on_cash) as avg_cash_on_cash,
+            AVG(total_return) as avg_total_return,
             AVG(lcf_year1) as avg_annual_cash_flow,
-            AVG(zori_growth_rate) as avg_rent_growth_rate
+            AVG(zori_growth_rate) as avg_rent_growth_rate,
+            AVG(investment_ranking) as avg_investment_ranking
         FROM properties
         GROUP BY state
         ORDER BY property_count DESC
-        ''')
-        
-        # Create table with year built statistics
-        cursor.execute('''
-        CREATE TABLE IF NOT EXISTS stats_by_year_built AS
-        SELECT 
-            CAST((year_built / 10) * 10 AS INTEGER) AS decade,
-            COUNT(*) as property_count,
-            AVG(list_price) as avg_price,
-            AVG(zori_monthly_rent) as avg_rent,
-            AVG(cap_rate) as avg_cap_rate,
-            AVG(lcf_year1) as avg_annual_cash_flow
-        FROM properties
-        WHERE year_built > 1900 AND year_built < 2030
-        GROUP BY decade
-        ORDER BY decade
-        ''')
-        
-        # Create a correlation matrix for key metrics
-        cursor.execute('''
-        CREATE TABLE IF NOT EXISTS metric_correlations AS
-        WITH data AS (
-            SELECT 
-                list_price, sqft, price_per_sqft, beds, full_baths,
-                zori_monthly_rent, cap_rate, cash_yield, irr, cash_on_cash,
-                lcf_year1, equity_at_exit
-            FROM properties
-            WHERE list_price > 0 AND sqft > 0 AND zori_monthly_rent > 0
-        ),
-        variances AS (
-            SELECT
-                AVG((list_price - (SELECT AVG(list_price) FROM data)) * (list_price - (SELECT AVG(list_price) FROM data))) AS var_list_price,
-                AVG((sqft - (SELECT AVG(sqft) FROM data)) * (sqft - (SELECT AVG(sqft) FROM data))) AS var_sqft,
-                AVG((price_per_sqft - (SELECT AVG(price_per_sqft) FROM data)) * (price_per_sqft - (SELECT AVG(price_per_sqft) FROM data))) AS var_price_per_sqft,
-                AVG((beds - (SELECT AVG(beds) FROM data)) * (beds - (SELECT AVG(beds) FROM data))) AS var_beds,
-                AVG((full_baths - (SELECT AVG(full_baths) FROM data)) * (full_baths - (SELECT AVG(full_baths) FROM data))) AS var_full_baths,
-                AVG((zori_monthly_rent - (SELECT AVG(zori_monthly_rent) FROM data)) * (zori_monthly_rent - (SELECT AVG(zori_monthly_rent) FROM data))) AS var_zori_monthly_rent,
-                AVG((cap_rate - (SELECT AVG(cap_rate) FROM data)) * (cap_rate - (SELECT AVG(cap_rate) FROM data))) AS var_cap_rate,
-                AVG((cash_yield - (SELECT AVG(cash_yield) FROM data)) * (cash_yield - (SELECT AVG(cash_yield) FROM data))) AS var_cash_yield,
-                AVG((irr - (SELECT AVG(irr) FROM data)) * (irr - (SELECT AVG(irr) FROM data))) AS var_irr,
-                AVG((cash_on_cash - (SELECT AVG(cash_on_cash) FROM data)) * (cash_on_cash - (SELECT AVG(cash_on_cash) FROM data))) AS var_cash_on_cash,
-                AVG((lcf_year1 - (SELECT AVG(lcf_year1) FROM data)) * (lcf_year1 - (SELECT AVG(lcf_year1) FROM data))) AS var_lcf_year1,
-                AVG((equity_at_exit - (SELECT AVG(equity_at_exit) FROM data)) * (equity_at_exit - (SELECT AVG(equity_at_exit) FROM data))) AS var_equity_at_exit
-            FROM data
-        )
-        SELECT
-            'list_price' AS metric1, 'list_price' AS metric2,
-            1.0 AS correlation
-        UNION ALL
-        SELECT 
-            'list_price' AS metric1, 'sqft' AS metric2,
-            AVG((list_price - (SELECT AVG(list_price) FROM data)) * (sqft - (SELECT AVG(sqft) FROM data))) / 
-            SQRT((SELECT var_list_price FROM variances) * (SELECT var_sqft FROM variances)) AS correlation
-        FROM data
-        
-        -- Add all combinations manually for main metrics
-        -- This would be much longer in practice, including all metric combinations
         ''')
         
         # Commit changes
@@ -812,90 +790,174 @@ def create_derived_tables(conn):
         logger.error(f"Error creating derived tables: {str(e)}")
         raise
 
-def validate_database():
+def create_api_views(conn):
     """
-    Run validation checks on the database to ensure data integrity.
+    Create specific views optimized for API endpoints.
+    
+    Args:
+        conn: SQLite connection
     """
+    logger.info("Creating API-specific views...")
+    
     try:
-        conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
         
-        # Check for null property IDs
-        cursor.execute("SELECT COUNT(*) FROM properties WHERE property_id IS NULL OR property_id = 0")
-        null_ids = cursor.fetchone()[0]
+        # Create a view for property search results (limited fields)
+        cursor.execute('''
+        CREATE VIEW IF NOT EXISTS api_property_search AS
+        SELECT 
+            property_id,
+            full_street_line,
+            city,
+            state,
+            zip_code,
+            beds,
+            CASE 
+                WHEN baths IS NOT NULL THEN baths
+                ELSE full_baths + (0.5 * half_baths)
+            END as baths,
+            sqft,
+            list_price,
+            price_per_sqft,
+            zori_monthly_rent,
+            cap_rate,
+            cash_on_cash,
+            total_return,
+            irr,
+            investment_ranking,
+            primary_photo
+        FROM properties
+        ''')
         
-        # Check for negative metrics
-        cursor.execute("SELECT COUNT(*) FROM properties WHERE cap_rate < 0 OR cash_yield < 0")
-        negative_metrics = cursor.fetchone()[0]
+        # Create view for property details (all required fields)
+        cursor.execute('''
+        CREATE VIEW IF NOT EXISTS api_property_details AS
+        SELECT 
+            property_id,
+            full_street_line,
+            city,
+            state,
+            zip_code,
+            beds,
+            CASE 
+                WHEN baths IS NOT NULL THEN baths
+                ELSE full_baths + (0.5 * half_baths)
+            END as baths,
+            sqft,
+            year_built,
+            list_price,
+            price_per_sqft,
+            zori_monthly_rent,
+            zori_annual_rent,
+            cap_rate,
+            cash_on_cash,
+            irr,
+            total_return,
+            down_payment_pct,
+            interest_rate,
+            monthly_payment,
+            loan_amount,
+            cash_equity,
+            lcf_year1,
+            investment_ranking,
+            investment_score,
+            primary_photo,
+            alt_photos,
+            broker_id,
+            broker_name,
+            broker_email,
+            broker_phones,
+            agent_id,
+            agent_name,
+            agent_email,
+            agent_phones,
+            office_name,
+            office_phones
+        FROM properties
+        ''')
         
-        # Check for unrealistic values
-        cursor.execute("SELECT COUNT(*) FROM properties WHERE cap_rate > 30") # Cap rates above 30% are suspicious
-        high_cap_rates = cursor.fetchone()[0]
+        # Create view for calculation audit details
+        cursor.execute('''
+        CREATE VIEW IF NOT EXISTS api_calculation_audit AS
+        SELECT 
+            p.property_id,
+            p.full_street_line,
+            p.city,
+            p.state,
+            p.zip_code,
+            r.zori_monthly_rent,
+            r.zori_annual_rent,
+            r.zori_growth_rate,
+            r.gross_rent_multiplier,
+            cf.tax_used,
+            cf.hoa_fee_used,
+            cf.noi_year1,
+            cf.cap_rate,
+            cf.ucf,
+            m.down_payment_pct,
+            m.interest_rate,
+            m.loan_term,
+            m.loan_amount,
+            m.monthly_payment,
+            m.annual_debt_service,
+            m.final_loan_balance,
+            ret.exit_cap_rate,
+            ret.exit_value,
+            ret.equity_at_exit,
+            ret.irr,
+            ret.cash_on_cash,
+            ret.total_return,
+            ret.investment_ranking,
+            pr.lcf_year1,
+            pr.lcf_year2,
+            pr.lcf_year3,
+            pr.lcf_year4,
+            pr.lcf_year5
+        FROM properties p
+        LEFT JOIN rental_income_audit r ON p.property_id = r.property_id
+        LEFT JOIN cash_flow_audit cf ON p.property_id = cf.property_id
+        LEFT JOIN mortgage_audit m ON p.property_id = m.property_id
+        LEFT JOIN investment_returns_audit ret ON p.property_id = ret.property_id
+        LEFT JOIN cash_flow_projections_audit pr ON p.property_id = pr.property_id
+        ''')
         
-        cursor.execute("SELECT COUNT(*) FROM properties WHERE irr > 50") # IRRs above 50% are suspicious
-        high_irrs = cursor.fetchone()[0]
+        # Create view for quick location search
+        cursor.execute('''
+        CREATE VIEW IF NOT EXISTS api_location_lookup AS
+        SELECT DISTINCT
+            city,
+            state,
+            zip_code,
+            COUNT(*) as property_count
+        FROM properties
+        GROUP BY city, state, zip_code
+        ''')
         
-        # Check for incomplete data
-        cursor.execute("SELECT COUNT(*) FROM properties WHERE list_price = 0 OR sqft = 0")
-        incomplete_data = cursor.fetchone()[0]
+        # Create view for property rankings by location
+        cursor.execute('''
+        CREATE VIEW IF NOT EXISTS api_location_rankings AS
+        SELECT
+            city,
+            state,
+            zip_code,
+            AVG(investment_ranking) as avg_ranking,
+            AVG(cap_rate) as avg_cap_rate,
+            AVG(cash_on_cash) as avg_cash_on_cash,
+            AVG(irr) as avg_irr,
+            AVG(total_return) as avg_total_return,
+            AVG(list_price) as avg_price,
+            COUNT(*) as property_count
+        FROM properties
+        GROUP BY city, state, zip_code
+        HAVING COUNT(*) >= 3
+        ''')
         
-        # Check for missing bedroom/bathroom data
-        cursor.execute("SELECT COUNT(*) FROM properties WHERE beds = 0 OR full_baths = 0")
-        missing_bed_bath = cursor.fetchone()[0]
-        
-        # Check if we have ZORI data for each ZIP code
-        cursor.execute("""
-        SELECT COUNT(DISTINCT p.zip_code) FROM properties p
-        LEFT JOIN zori_data z ON p.zip_code = z.RegionName
-        WHERE z.RegionName IS NULL
-        """)
-        missing_zori = cursor.fetchone()[0]
-        
-        # Validate investment metrics consistency
-        cursor.execute("""
-        SELECT COUNT(*) FROM properties
-        WHERE cap_rate > 0 AND cash_yield = 0
-        OR cap_rate = 0 AND cash_yield > 0
-        """)
-        inconsistent_metrics = cursor.fetchone()[0]
-        
-        # Log validation results
-        logger.info("=== Database Validation Results ===")
-        logger.info(f"Properties with null IDs: {null_ids}")
-        logger.info(f"Properties with negative metrics: {negative_metrics}")
-        logger.info(f"Properties with suspiciously high cap rates (>30%): {high_cap_rates}")
-        logger.info(f"Properties with suspiciously high IRRs (>50%): {high_irrs}")
-        logger.info(f"Properties with incomplete data (price or sqft = 0): {incomplete_data}")
-        logger.info(f"Properties missing bed/bath data: {missing_bed_bath}")
-        logger.info(f"ZIP codes without ZORI data: {missing_zori}")
-        logger.info(f"Properties with inconsistent metrics: {inconsistent_metrics}")
-        
-        # Check for data integrity
-        validation_passed = (null_ids == 0 and negative_metrics == 0 and 
-                           high_cap_rates < 10 and high_irrs < 10 and
-                           inconsistent_metrics < 20)
-        
-        if validation_passed:
-            logger.info("Database passed validation checks")
-        else:
-            logger.warning("Database contains potentially problematic data - review logs")
-        
-        conn.close()
-        
-        return {
-            "null_ids": null_ids,
-            "negative_metrics": negative_metrics,
-            "high_cap_rates": high_cap_rates,
-            "high_irrs": high_irrs,
-            "incomplete_data": incomplete_data,
-            "missing_bed_bath": missing_bed_bath,
-            "missing_zori": missing_zori,
-            "inconsistent_metrics": inconsistent_metrics,
-            "validation_passed": validation_passed
-        }
+        # Commit changes
+        conn.commit()
+        logger.info("API views created successfully")
         
     except Exception as e:
-        logger.error(f"Error during database validation: {str(e)}")
+        logger.error(f"Error creating API views: {e}")
         raise
 
 def ensure_required_fields(conn):
@@ -925,6 +987,7 @@ def ensure_required_fields(conn):
         ("beds", "REAL"),
         ("full_baths", "REAL"),
         ("half_baths", "REAL"),
+        ("baths", "REAL"),  # Added for convenience
         ("sqft", "REAL"),
         ("year_built", "INTEGER"),
         ("list_price", "REAL"),
@@ -948,9 +1011,21 @@ def ensure_required_fields(conn):
         ("zori_growth_rate", "REAL"),
         ("irr", "REAL"),
         ("cash_on_cash", "REAL"),
+        ("total_return", "REAL"),  # Added for total return metric
         ("monthly_payment", "REAL"),
         ("lcf_year1", "REAL"),
-        ("equity_at_exit", "REAL")
+        ("equity_at_exit", "REAL"),
+        ("investment_ranking", "INTEGER"),  # Added for investment ranking
+        ("broker_id", "INTEGER"),
+        ("broker_name", "TEXT"),
+        ("broker_email", "TEXT"),
+        ("broker_phones", "TEXT"),
+        ("agent_id", "INTEGER"),
+        ("agent_name", "TEXT"),
+        ("agent_email", "TEXT"),
+        ("agent_phones", "TEXT"),
+        ("office_name", "TEXT"),
+        ("office_phones", "TEXT")
     ]
     
     # Add any missing columns
@@ -973,6 +1048,84 @@ def ensure_required_fields(conn):
     
     return len(missing_columns)
 
+def validate_database():
+    """
+    Run validation checks on the database to ensure data integrity.
+    """
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        
+        # Check for null property IDs
+        cursor.execute("SELECT COUNT(*) FROM properties WHERE property_id IS NULL OR property_id = 0")
+        null_ids = cursor.fetchone()[0]
+        
+        # Check for required API fields
+        cursor.execute("SELECT COUNT(*) FROM properties WHERE list_price = 0 OR city = '' OR state = ''")
+        missing_required = cursor.fetchone()[0]
+        
+        # Check for negative metrics
+        cursor.execute("SELECT COUNT(*) FROM properties WHERE cap_rate < 0 OR cash_yield < 0")
+        negative_metrics = cursor.fetchone()[0]
+        
+        # Check for unrealistic values
+        cursor.execute("SELECT COUNT(*) FROM properties WHERE cap_rate > 30") # Cap rates above 30% are suspicious
+        high_cap_rates = cursor.fetchone()[0]
+        
+        cursor.execute("SELECT COUNT(*) FROM properties WHERE irr > 50") # IRRs above 50% are suspicious
+        high_irrs = cursor.fetchone()[0]
+        
+        # Check for properties missing broker info
+        cursor.execute("SELECT COUNT(*) FROM properties WHERE broker_name = '' OR broker_name IS NULL")
+        missing_broker = cursor.fetchone()[0]
+        
+        # Check for missing image data
+        cursor.execute("SELECT COUNT(*) FROM properties WHERE primary_photo = '' OR primary_photo IS NULL")
+        missing_images = cursor.fetchone()[0]
+        
+        # Check if investment_ranking is present
+        cursor.execute("SELECT COUNT(*) FROM properties WHERE investment_ranking IS NULL OR investment_ranking = 0")
+        missing_ranking = cursor.fetchone()[0]
+        
+        # Log validation results
+        logger.info("=== Database Validation Results ===")
+        logger.info(f"Properties with null IDs: {null_ids}")
+        logger.info(f"Properties missing required API fields: {missing_required}")
+        logger.info(f"Properties with negative metrics: {negative_metrics}")
+        logger.info(f"Properties with suspiciously high cap rates (>30%): {high_cap_rates}")
+        logger.info(f"Properties with suspiciously high IRRs (>50%): {high_irrs}")
+        logger.info(f"Properties missing broker information: {missing_broker}")
+        logger.info(f"Properties missing primary photos: {missing_images}")
+        logger.info(f"Properties missing investment ranking: {missing_ranking}")
+        
+        # Check for data integrity
+        validation_passed = (null_ids == 0 and missing_required == 0 and
+                           negative_metrics < 20 and high_cap_rates < 10 and 
+                           high_irrs < 10 and missing_ranking == 0)
+        
+        if validation_passed:
+            logger.info("Database passed validation checks")
+        else:
+            logger.warning("Database contains potentially problematic data - review logs")
+        
+        conn.close()
+        
+        return {
+            "null_ids": null_ids,
+            "missing_required": missing_required,
+            "negative_metrics": negative_metrics,
+            "high_cap_rates": high_cap_rates,
+            "high_irrs": high_irrs,
+            "missing_broker": missing_broker,
+            "missing_images": missing_images,
+            "missing_ranking": missing_ranking,
+            "validation_passed": validation_passed
+        }
+        
+    except Exception as e:
+        logger.error(f"Error during database validation: {str(e)}")
+        raise
+
 if __name__ == "__main__":
     # Check if database already exists
     db_exists = os.path.exists(DB_FILE)
@@ -992,7 +1145,7 @@ if __name__ == "__main__":
         
         # Summarize results
         logger.info("=== Database Setup Summary ===")
-        logger.info(f"Total properties imported: {setup_results['total_properties']}")
+        logger.info(f"Total filtered properties imported: {setup_results['total_properties']}")
         logger.info(f"Setup completed in {setup_results['setup_duration_seconds']:.2f} seconds")
         logger.info(f"ZORI data available: {'Yes' if setup_results['has_zori_data'] else 'No'}")
         if setup_results['has_zori_data']:
@@ -1000,7 +1153,7 @@ if __name__ == "__main__":
         logger.info(f"Database validation: {'PASSED' if validation_results['validation_passed'] else 'FAILED'}")
         
         print("\nDatabase setup complete!")
-        print(f"- {setup_results['total_properties']} properties imported")
+        print(f"- {setup_results['total_properties']} filtered investment properties imported")
         
         if hasattr(setup_results, 'cities_analyzed'):
             print(f"- {setup_results['cities_analyzed']} cities with detailed market stats")

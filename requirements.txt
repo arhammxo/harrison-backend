@@ -2,3 +2,13 @@ fastapi
 uvicorn
 pydantic
 google-cloud-storage
+
+
+Flask
+Werkzeug
+itsdangerous
+Jinja2
+MarkupSafe
+click
+gunicorn
+python-dotenv

@@ -2,3 +2,4 @@
 *.db
 /old
 *.log
+api_req.txt

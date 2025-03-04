@@ -1,0 +1,1293 @@
+{
+    "openapi": "3.0.2",
+    "info": {
+      "title": "Investment Properties API",
+      "description": "API for accessing investment property data with comprehensive filtering, sorting, and search capabilities.",
+      "version": "1.0.0",
+      "contact": {
+        "email": "support@example.com"
+      }
+    },
+    "servers": [
+      {
+        "url": "/",
+        "description": "Current server"
+      }
+    ],
+    "tags": [
+      {
+        "name": "properties",
+        "description": "Property listings and details"
+      },
+      {
+        "name": "locations",
+        "description": "Location-based data (cities, zip codes, states)"
+      },
+      {
+        "name": "statistics",
+        "description": "Market statistics and analytics"
+      }
+    ],
+    "paths": {
+      "/": {
+        "get": {
+          "summary": "API root endpoint",
+          "description": "Returns basic API information and available endpoints",
+          "operationId": "getApiInfo",
+          "responses": {
+            "200": {
+              "description": "API information",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/ApiInfo"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "/api/properties": {
+        "get": {
+          "tags": ["properties"],
+          "summary": "Search for properties",
+          "description": "Search for investment properties with various filters and sorting options",
+          "operationId": "searchProperties",
+          "parameters": [
+            {
+              "name": "zip_code",
+              "in": "query",
+              "description": "Filter by zip code",
+              "schema": {
+                "type": "string"
+              }
+            },
+            {
+              "name": "city",
+              "in": "query",
+              "description": "Filter by city name",
+              "schema": {
+                "type": "string"
+              }
+            },
+            {
+              "name": "state",
+              "in": "query",
+              "description": "Filter by state code",
+              "schema": {
+                "type": "string"
+              }
+            },
+            {
+              "name": "min_price",
+              "in": "query",
+              "description": "Minimum property price",
+              "schema": {
+                "type": "integer",
+                "format": "int32"
+              }
+            },
+            {
+              "name": "max_price",
+              "in": "query",
+              "description": "Maximum property price",
+              "schema": {
+                "type": "integer",
+                "format": "int32"
+              }
+            },
+            {
+              "name": "sort_by",
+              "in": "query",
+              "description": "Field to sort by",
+              "schema": {
+                "type": "string",
+                "enum": ["investment_ranking", "price_per_sqft", "cap_rate", "cash_on_cash", "irr", "total_return", "list_price"],
+                "default": "investment_ranking"
+              }
+            },
+            {
+              "name": "page",
+              "in": "query",
+              "description": "Page number for pagination",
+              "schema": {
+                "type": "integer",
+                "format": "int32",
+                "default": 1,
+                "minimum": 1
+              }
+            },
+            {
+              "name": "limit",
+              "in": "query",
+              "description": "Results per page",
+              "schema": {
+                "type": "integer",
+                "format": "int32",
+                "default": 20,
+                "minimum": 1,
+                "maximum": 100
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "description": "Successful response with property results",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/PropertySearchResponse"
+                  }
+                }
+              }
+            },
+            "400": {
+              "description": "Bad request - invalid parameters",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/ErrorResponse"
+                  }
+                }
+              }
+            },
+            "500": {
+              "description": "Server error",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/ErrorResponse"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "/api/properties/{property_id}": {
+        "get": {
+          "tags": ["properties"],
+          "summary": "Get property details",
+          "description": "Get detailed information for a specific property",
+          "operationId": "getPropertyDetail",
+          "parameters": [
+            {
+              "name": "property_id",
+              "in": "path",
+              "description": "Unique property identifier",
+              "required": true,
+              "schema": {
+                "type": "integer",
+                "format": "int32"
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "description": "Successful response with property details",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/PropertyDetailResponse"
+                  }
+                }
+              }
+            },
+            "404": {
+              "description": "Property not found",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/ErrorResponse"
+                  }
+                }
+              }
+            },
+            "500": {
+              "description": "Server error",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/ErrorResponse"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "/api/properties/{property_id}/audit": {
+        "get": {
+          "tags": ["properties"],
+          "summary": "Get property calculation audit",
+          "description": "Get detailed calculation audit data for a specific property",
+          "operationId": "getPropertyAudit",
+          "parameters": [
+            {
+              "name": "property_id",
+              "in": "path",
+              "description": "Unique property identifier",
+              "required": true,
+              "schema": {
+                "type": "integer",
+                "format": "int32"
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "description": "Successful response with property calculation audit data",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/PropertyAuditResponse"
+                  }
+                }
+              }
+            },
+            "404": {
+              "description": "Property or audit data not found",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/ErrorResponse"
+                  }
+                }
+              }
+            },
+            "500": {
+              "description": "Server error",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/ErrorResponse"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "/api/cities": {
+        "get": {
+          "tags": ["locations"],
+          "summary": "Get cities list",
+          "description": "Get a list of available cities, optionally filtered by state",
+          "operationId": "getCities",
+          "parameters": [
+            {
+              "name": "state",
+              "in": "query",
+              "description": "Filter cities by state code",
+              "schema": {
+                "type": "string"
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "description": "Successful response with cities list",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/CitiesResponse"
+                  }
+                }
+              }
+            },
+            "500": {
+              "description": "Server error",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/ErrorResponse"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "/api/zipcodes": {
+        "get": {
+          "tags": ["locations"],
+          "summary": "Get zip codes list",
+          "description": "Get a list of available zip codes, optionally filtered by city and/or state",
+          "operationId": "getZipcodes",
+          "parameters": [
+            {
+              "name": "city",
+              "in": "query",
+              "description": "Filter zip codes by city name",
+              "schema": {
+                "type": "string"
+              }
+            },
+            {
+              "name": "state",
+              "in": "query",
+              "description": "Filter zip codes by state code",
+              "schema": {
+                "type": "string"
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "description": "Successful response with zip codes list",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/ZipcodesResponse"
+                  }
+                }
+              }
+            },
+            "500": {
+              "description": "Server error",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/ErrorResponse"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "/api/states": {
+        "get": {
+          "tags": ["locations"],
+          "summary": "Get states list",
+          "description": "Get a list of available states with property counts",
+          "operationId": "getStates",
+          "responses": {
+            "200": {
+              "description": "Successful response with states list",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/StatesResponse"
+                  }
+                }
+              }
+            },
+            "500": {
+              "description": "Server error",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/ErrorResponse"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "/api/stats/market": {
+        "get": {
+          "tags": ["statistics"],
+          "summary": "Get market statistics",
+          "description": "Get market statistics by location type",
+          "operationId": "getMarketStats",
+          "parameters": [
+            {
+              "name": "type",
+              "in": "query",
+              "description": "Location type (city, zipcode, or state)",
+              "schema": {
+                "type": "string",
+                "enum": ["city", "zipcode", "state"],
+                "default": "city"
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "description": "Successful response with market statistics",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/MarketStatsResponse"
+                  }
+                }
+              }
+            },
+            "400": {
+              "description": "Bad request - invalid location type",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/ErrorResponse"
+                  }
+                }
+              }
+            },
+            "500": {
+              "description": "Server error",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/ErrorResponse"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "components": {
+      "schemas": {
+        "ApiInfo": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "example": "Investment Properties API"
+            },
+            "version": {
+              "type": "string",
+              "example": "1.0.0"
+            },
+            "endpoints": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              },
+              "example": {
+                "Search Properties": "/api/properties",
+                "Property Detail": "/api/properties/<property_id>",
+                "Documentation": "/docs"
+              }
+            }
+          }
+        },
+        "PropertySummary": {
+          "type": "object",
+          "properties": {
+            "property_id": {
+              "type": "integer",
+              "format": "int32",
+              "example": 12345
+            },
+            "full_street_line": {
+              "type": "string",
+              "example": "123 Main St"
+            },
+            "city": {
+              "type": "string",
+              "example": "New York"
+            },
+            "state": {
+              "type": "string",
+              "example": "NY"
+            },
+            "zip_code": {
+              "type": "integer",
+              "format": "int32",
+              "example": 10001
+            },
+            "beds": {
+              "type": "number",
+              "format": "float",
+              "example": 2
+            },
+            "baths": {
+              "type": "number",
+              "format": "float",
+              "example": 2
+            },
+            "sqft": {
+              "type": "integer",
+              "format": "int32",
+              "example": 1250
+            },
+            "list_price": {
+              "type": "integer",
+              "format": "int32",
+              "example": 750000
+            },
+            "price_per_sqft": {
+              "type": "integer",
+              "format": "int32",
+              "example": 600
+            },
+            "zori_monthly_rent": {
+              "type": "number",
+              "format": "float",
+              "example": 3500
+            },
+            "cap_rate": {
+              "type": "number",
+              "format": "float",
+              "example": 5.6
+            },
+            "cash_on_cash": {
+              "type": "number",
+              "format": "float",
+              "example": 4.2
+            },
+            "irr": {
+              "type": "number",
+              "format": "float",
+              "example": 12.5
+            },
+            "total_return": {
+              "type": "number",
+              "format": "float",
+              "example": 2.3
+            },
+            "investment_ranking": {
+              "type": "integer",
+              "format": "int32",
+              "example": 8
+            },
+            "primary_photo": {
+              "type": "string",
+              "example": "https://example.com/property-12345.jpg"
+            }
+          }
+        },
+        "PropertyDetail": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/PropertySummary"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "year_built": {
+                  "type": "integer",
+                  "format": "int32",
+                  "example": 2005
+                },
+                "zori_annual_rent": {
+                  "type": "number",
+                  "format": "float",
+                  "example": 42000
+                },
+                "down_payment_pct": {
+                  "type": "number",
+                  "format": "float",
+                  "example": 0.4
+                },
+                "interest_rate": {
+                  "type": "number",
+                  "format": "float",
+                  "example": 7.5
+                },
+                "monthly_payment": {
+                  "type": "number",
+                  "format": "float",
+                  "example": 2100
+                },
+                "loan_amount": {
+                  "type": "number",
+                  "format": "float",
+                  "example": 450000
+                },
+                "cash_equity": {
+                  "type": "number",
+                  "format": "float",
+                  "example": 300000
+                },
+                "lcf_year1": {
+                  "type": "number",
+                  "format": "float",
+                  "example": 15000
+                },
+                "investment_score": {
+                  "type": "number",
+                  "format": "float",
+                  "example": 8.3
+                },
+                "alt_photos": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "example": [
+                    "https://example.com/property-12345-2.jpg",
+                    "https://example.com/property-12345-3.jpg"
+                  ]
+                },
+                "broker_info": {
+                  "type": "object",
+                  "properties": {
+                    "broker_id": {
+                      "type": "integer",
+                      "format": "int32",
+                      "example": 789
+                    },
+                    "broker_name": {
+                      "type": "string",
+                      "example": "ABC Realty"
+                    },
+                    "broker_email": {
+                      "type": "string",
+                      "example": "info@abcrealty.com"
+                    },
+                    "broker_phones": {
+                      "type": "string",
+                      "example": "555-1234"
+                    },
+                    "agent_id": {
+                      "type": "integer",
+                      "format": "int32",
+                      "example": 456
+                    },
+                    "agent_name": {
+                      "type": "string",
+                      "example": "Jane Smith"
+                    },
+                    "agent_email": {
+                      "type": "string",
+                      "example": "jane@abcrealty.com"
+                    },
+                    "agent_phones": {
+                      "type": "string",
+                      "example": "555-5678"
+                    },
+                    "office_name": {
+                      "type": "string",
+                      "example": "ABC Realty Downtown"
+                    },
+                    "office_phones": {
+                      "type": "string",
+                      "example": "555-9000"
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "PropertyAudit": {
+          "type": "object",
+          "properties": {
+            "property_id": {
+              "type": "integer",
+              "format": "int32",
+              "example": 12345
+            },
+            "property_info": {
+              "type": "object",
+              "properties": {
+                "full_street_line": {
+                  "type": "string",
+                  "example": "123 Main St"
+                },
+                "city": {
+                  "type": "string",
+                  "example": "New York"
+                },
+                "state": {
+                  "type": "string",
+                  "example": "NY"
+                },
+                "zip_code": {
+                  "type": "integer",
+                  "format": "int32",
+                  "example": 10001
+                }
+              }
+            },
+            "rental_income": {
+              "type": "object",
+              "properties": {
+                "zori_monthly_rent": {
+                  "type": "number",
+                  "format": "float",
+                  "example": 3500
+                },
+                "zori_annual_rent": {
+                  "type": "number",
+                  "format": "float",
+                  "example": 42000
+                },
+                "zori_growth_rate": {
+                  "type": "number",
+                  "format": "float",
+                  "example": 3.2
+                },
+                "gross_rent_multiplier": {
+                  "type": "number",
+                  "format": "float",
+                  "example": 17.86
+                }
+              }
+            },
+            "expenses": {
+              "type": "object",
+              "properties": {
+                "tax_used": {
+                  "type": "number",
+                  "format": "float",
+                  "example": 7500
+                },
+                "hoa_fee_used": {
+                  "type": "number",
+                  "format": "float",
+                  "example": 400
+                }
+              }
+            },
+            "mortgage": {
+              "type": "object",
+              "properties": {
+                "down_payment_pct": {
+                  "type": "number",
+                  "format": "float",
+                  "example": 0.4
+                },
+                "interest_rate": {
+                  "type": "number",
+                  "format": "float",
+                  "example": 7.5
+                },
+                "loan_term": {
+                  "type": "integer",
+                  "format": "int32",
+                  "example": 20
+                },
+                "loan_amount": {
+                  "type": "number",
+                  "format": "float",
+                  "example": 450000
+                },
+                "monthly_payment": {
+                  "type": "number",
+                  "format": "float",
+                  "example": 2100
+                },
+                "annual_debt_service": {
+                  "type": "number",
+                  "format": "float",
+                  "example": 25200
+                },
+                "final_loan_balance": {
+                  "type": "number",
+                  "format": "float",
+                  "example": 350000
+                }
+              }
+            },
+            "returns": {
+              "type": "object",
+              "properties": {
+                "cap_rate": {
+                  "type": "number",
+                  "format": "float",
+                  "example": 5.6
+                },
+                "exit_cap_rate": {
+                  "type": "number",
+                  "format": "float",
+                  "example": 6.1
+                },
+                "exit_value": {
+                  "type": "number",
+                  "format": "float",
+                  "example": 820000
+                },
+                "equity_at_exit": {
+                  "type": "number",
+                  "format": "float",
+                  "example": 570000
+                },
+                "irr": {
+                  "type": "number",
+                  "format": "float",
+                  "example": 12.5
+                },
+                "cash_on_cash": {
+                  "type": "number",
+                  "format": "float",
+                  "example": 4.2
+                },
+                "total_return": {
+                  "type": "number",
+                  "format": "float",
+                  "example": 2.3
+                },
+                "investment_ranking": {
+                  "type": "integer",
+                  "format": "int32",
+                  "example": 8
+                }
+              }
+            },
+            "projections": {
+              "type": "object",
+              "properties": {
+                "year1": {
+                  "type": "object",
+                  "properties": {
+                    "noi": {
+                      "type": "number",
+                      "format": "float",
+                      "example": 35000
+                    },
+                    "ucf": {
+                      "type": "number",
+                      "format": "float",
+                      "example": 27500
+                    },
+                    "lcf": {
+                      "type": "number",
+                      "format": "float",
+                      "example": 2300
+                    }
+                  }
+                },
+                "year2": {
+                  "type": "object",
+                  "properties": {
+                    "noi": {
+                      "type": "number",
+                      "format": "float",
+                      "example": 36120
+                    },
+                    "ucf": {
+                      "type": "number",
+                      "format": "float",
+                      "example": 28620
+                    },
+                    "lcf": {
+                      "type": "number",
+                      "format": "float",
+                      "example": 3420
+                    }
+                  }
+                },
+                "year3": {
+                  "type": "object",
+                  "properties": {
+                    "noi": {
+                      "type": "number",
+                      "format": "float",
+                      "example": 37276
+                    },
+                    "ucf": {
+                      "type": "number",
+                      "format": "float",
+                      "example": 29776
+                    },
+                    "lcf": {
+                      "type": "number",
+                      "format": "float",
+                      "example": 4576
+                    }
+                  }
+                },
+                "year4": {
+                  "type": "object",
+                  "properties": {
+                    "noi": {
+                      "type": "number",
+                      "format": "float",
+                      "example": 38469
+                    },
+                    "ucf": {
+                      "type": "number",
+                      "format": "float",
+                      "example": 30969
+                    },
+                    "lcf": {
+                      "type": "number",
+                      "format": "float",
+                      "example": 5769
+                    }
+                  }
+                },
+                "year5": {
+                  "type": "object",
+                  "properties": {
+                    "noi": {
+                      "type": "number",
+                      "format": "float",
+                      "example": 39700
+                    },
+                    "ucf": {
+                      "type": "number",
+                      "format": "float",
+                      "example": 32200
+                    },
+                    "lcf": {
+                      "type": "number",
+                      "format": "float",
+                      "example": 7000
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "City": {
+          "type": "object",
+          "properties": {
+            "city": {
+              "type": "string",
+              "example": "Los Angeles"
+            },
+            "state": {
+              "type": "string",
+              "example": "CA"
+            },
+            "property_count": {
+              "type": "integer",
+              "format": "int32",
+              "example": 230
+            }
+          }
+        },
+        "Zipcode": {
+          "type": "object",
+          "properties": {
+            "zip_code": {
+              "type": "integer",
+              "format": "int32",
+              "example": 10001
+            },
+            "city": {
+              "type": "string",
+              "example": "New York"
+            },
+            "state": {
+              "type": "string",
+              "example": "NY"
+            },
+            "property_count": {
+              "type": "integer",
+              "format": "int32",
+              "example": 25
+            }
+          }
+        },
+        "State": {
+          "type": "object",
+          "properties": {
+            "state": {
+              "type": "string",
+              "example": "CA"
+            },
+            "property_count": {
+              "type": "integer",
+              "format": "int32",
+              "example": 450
+            }
+          }
+        },
+        "MarketStat": {
+          "type": "object",
+          "properties": {
+            "city": {
+              "type": "string",
+              "example": "New York"
+            },
+            "state": {
+              "type": "string",
+              "example": "NY"
+            },
+            "property_count": {
+              "type": "integer",
+              "format": "int32",
+              "example": 245
+            },
+            "avg_price": {
+              "type": "number",
+              "format": "float",
+              "example": 850000
+            },
+            "min_price": {
+              "type": "number",
+              "format": "float",
+              "example": 450000
+            },
+            "max_price": {
+              "type": "number",
+              "format": "float",
+              "example": 2500000
+            },
+            "avg_rent": {
+              "type": "number",
+              "format": "float",
+              "example": 3800
+            },
+            "avg_cap_rate": {
+              "type": "number",
+              "format": "float",
+              "example": 5.2
+            },
+            "avg_cash_yield": {
+              "type": "number",
+              "format": "float",
+              "example": 4.3
+            },
+            "avg_irr": {
+              "type": "number",
+              "format": "float",
+              "example": 11.7
+            },
+            "avg_cash_on_cash": {
+              "type": "number",
+              "format": "float",
+              "example": 3.8
+            },
+            "avg_total_return": {
+              "type": "number",
+              "format": "float",
+              "example": 2.1
+            },
+            "avg_price_per_sqft": {
+              "type": "number",
+              "format": "float",
+              "example": 725
+            },
+            "avg_annual_cash_flow": {
+              "type": "number",
+              "format": "float",
+              "example": 16500
+            },
+            "avg_rent_growth_rate": {
+              "type": "number",
+              "format": "float",
+              "example": 3.1
+            },
+            "avg_investment_ranking": {
+              "type": "number",
+              "format": "float",
+              "example": 7.2
+            }
+          }
+        },
+        "PaginationInfo": {
+          "type": "object",
+          "properties": {
+            "page": {
+              "type": "integer",
+              "format": "int32",
+              "example": 1
+            },
+            "limit": {
+              "type": "integer",
+              "format": "int32",
+              "example": 20
+            },
+            "total_count": {
+              "type": "integer",
+              "format": "int32",
+              "example": 245
+            },
+            "total_pages": {
+              "type": "integer",
+              "format": "int32",
+              "example": 13
+            }
+          }
+        },
+        "PropertySearchResponse": {
+          "type": "object",
+          "properties": {
+            "success": {
+              "type": "boolean",
+              "example": true
+            },
+            "data": {
+              "type": "object",
+              "properties": {
+                "properties": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PropertySummary"
+                  }
+                },
+                "pagination": {
+                  "$ref": "#/components/schemas/PaginationInfo"
+                },
+                "filters": {
+                  "type": "object",
+                  "properties": {
+                    "zip_code": {
+                      "type": ["string", "null"],
+                      "example": null
+                    },
+                    "city": {
+                      "type": ["string", "null"],
+                      "example": "New York"
+                    },
+                    "state": {
+                      "type": ["string", "null"],
+                      "example": "NY"
+                    },
+                    "min_price": {
+                      "type": ["string", "null"],
+                      "example": "500000"
+                    },
+                    "max_price": {
+                      "type": ["string", "null"],
+                      "example": "1000000"
+                    },
+                    "sort_by": {
+                      "type": "string",
+                      "example": "cap_rate"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "PropertyDetailResponse": {
+          "type": "object",
+          "properties": {
+            "success": {
+              "type": "boolean",
+              "example": true
+            },
+            "data": {
+              "$ref": "#/components/schemas/PropertyDetail"
+            }
+          }
+        },
+        "PropertyAuditResponse": {
+          "type": "object",
+          "properties": {
+            "success": {
+              "type": "boolean",
+              "example": true
+            },
+            "data": {
+              "$ref": "#/components/schemas/PropertyAudit"
+            }
+          }
+        },
+        "CitiesResponse": {
+          "type": "object",
+          "properties": {
+            "success": {
+              "type": "boolean",
+              "example": true
+            },
+            "data": {
+              "type": "object",
+              "properties": {
+                "cities": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/City"
+                  }
+                },
+                "count": {
+                  "type": "integer",
+                  "format": "int32",
+                  "example": 45
+                }
+              }
+            }
+          }
+        },
+        "ZipcodesResponse": {
+          "type": "object",
+          "properties": {
+            "success": {
+              "type": "boolean",
+              "example": true
+            },
+            "data": {
+              "type": "object",
+              "properties": {
+                "zipcodes": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Zipcode"
+                  }
+                },
+                "count": {
+                  "type": "integer",
+                  "format": "int32",
+                  "example": 15
+                }
+              }
+            }
+          }
+        },
+        "StatesResponse": {
+          "type": "object",
+          "properties": {
+            "success": {
+              "type": "boolean",
+              "example": true
+            },
+            "data": {
+              "type": "object",
+              "properties": {
+                "states": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/State"
+                  }
+                },
+                "count": {
+                  "type": "integer",
+                  "format": "int32",
+                  "example": 35
+                }
+              }
+            }
+          }
+        },
+        "MarketStatsResponse": {
+          "type": "object",
+          "properties": {
+            "success": {
+              "type": "boolean",
+              "example": true
+            },
+            "data": {
+              "type": "object",
+              "properties": {
+                "stats": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MarketStat"
+                  }
+                },
+                "count": {
+                  "type": "integer",
+                  "format": "int32",
+                  "example": 75
+                },
+                "type": {
+                  "type": "string",
+                  "example": "city"
+                }
+              }
+            }
+          }
+        },
+        "ErrorResponse": {
+          "type": "object",
+          "properties": {
+            "success": {
+              "type": "boolean",
+              "example": false
+            },
+            "error": {
+              "type": "string",
+              "example": "Not found"
+            },
+            "message": {
+              "type": "string",
+              "example": "The requested resource does not exist"
+            }
+          }
+        }
+      }
+    }
+  }
