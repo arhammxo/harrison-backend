@@ -7,18 +7,140 @@ import os.path
 import sys
 import glob
 from concurrent.futures import ProcessPoolExecutor, as_completed
+import ast
+
+# =====================================================================
+# UTILITY FUNCTIONS
+# =====================================================================
+
+def round_price(value):
+    """
+    Round price values to integers for dollar amounts.
+    """
+    try:
+        if value is None or value == '':
+            return None
+        # Convert to float first, then round to integer
+        return int(round(float(value)))
+    except (ValueError, TypeError):
+        return value
+
+def format_phone_number(phone_data, extract_numbers_only=False):
+    """
+    Format phone numbers in a consistent way.
+    
+    Args:
+        phone_data: List of dictionaries or string representation of phone data
+        extract_numbers_only: If True, returns just a string of formatted numbers separated by semicolons
+        
+    Returns:
+        Formatted phone data or string of formatted phone numbers
+    """
+    # Explicitly check for None
+    if phone_data is None:
+        return None if not extract_numbers_only else ""
+        
+    formatted_phones = []
+    
+    try:
+        # If it's a string, try to convert to Python object
+        if isinstance(phone_data, str):
+            # Handle empty strings or 'None' strings
+            if not phone_data.strip() or phone_data.lower() == 'none':
+                return "" if extract_numbers_only else phone_data
+                
+            try:
+                phone_data = ast.literal_eval(phone_data)
+            except (ValueError, SyntaxError):
+                # If conversion fails, return as is
+                return phone_data
+                
+        # Process the phone data
+        if isinstance(phone_data, list):
+            for item in phone_data:
+                if isinstance(item, dict) and 'number' in item and item['number']:
+                    number = str(item['number'])
+                    # Keep only digits
+                    digits = ''.join(c for c in number if c.isdigit())
+                    
+                    # Format the number
+                    formatted_number = number  # Default to original
+                    if len(digits) == 10:  # Standard US number
+                        formatted_number = f"({digits[0:3]}) {digits[3:6]}-{digits[6:10]}"
+                    elif len(digits) == 11 and digits[0] == '1':  # With country code
+                        formatted_number = f"({digits[1:4]}) {digits[4:7]}-{digits[7:11]}"
+                    
+                    # Update the item in the original structure
+                    item['number'] = formatted_number
+                    
+                    # Also add to our formatted_phones list for possible extraction
+                    formatted_phones.append(formatted_number)
+        
+        # Return based on extraction choice
+        if extract_numbers_only:
+            return "; ".join(formatted_phones)
+        else:
+            return phone_data
+            
+    except Exception as e:
+        # If any error occurs, log and return empty string or original
+        print(f"Error formatting phone: {e}")
+        return "" if extract_numbers_only else phone_data
 
 # =====================================================================
 # GLOBAL CONSTANTS AND CONFIGURATION
 # =====================================================================
 
+# List of fields that should be rounded to whole dollars
+DOLLAR_FIELDS = [
+    # Base property data
+    'list_price', 'list_price_min', 'list_price_max', 'sold_price', 
+    'assessed_value', 'estimated_value', 'tax',
+    
+    # Rent estimates
+    'zori_monthly_rent', 'zori_annual_rent', 'zori_rent_year1', 'zori_rent_year2', 
+    'zori_rent_year3', 'zori_rent_year4', 'zori_rent_year5',
+    
+    # Cash flow metrics
+    'monthly_rent', 'annual_rent', 'tax_used', 'hoa_fee_used', 
+    'cash_equity', 'transaction_cost',
+    'noi_year1', 'noi_year2', 'noi_year3', 'noi_year4', 'noi_year5',
+    'ucf', 'ucf_year1', 'ucf_year2', 'ucf_year3', 'ucf_year4', 'ucf_year5',
+    
+    # Mortgage metrics
+    'loan_amount', 'monthly_payment', 'annual_debt_service',
+    'principal_paid_year1', 'principal_paid_year2', 'principal_paid_year3', 
+    'principal_paid_year4', 'principal_paid_year5',
+    'loan_balance_year1', 'loan_balance_year2', 'loan_balance_year3', 
+    'loan_balance_year4', 'loan_balance_year5',
+    'lcf_year1', 'lcf_year2', 'lcf_year3', 'lcf_year4', 'lcf_year5',
+    'total_principal_paid', 'final_loan_balance', 'accumulated_cash_flow',
+    
+    # Return metrics
+    'exit_value', 'equity_at_exit'
+]
+
 # Input and output file paths
 PROPERTY_DATA_FILES = [
     'for_sale_20250227_0226.csv',
+    'for_sale_20250227_0235.csv',
+    'for_sale_20250227_0243.csv',
+    'for_sale_20250227_0244.csv',
+    'for_sale_20250227_0245.csv',
+    'for_sale_20250227_0438.csv',
+    'for_sale_20250227_0459.csv',
+    'for_sale_20250227_0502.csv',
+    'for_sale_20250227_0625.csv',
+    'for_sale_20250227_0629.csv',
+    'for_sale_20250227_0638.csv',
+    'for_sale_20250227_0643.csv',
+    'for_sale_20250227_0659.csv',
+    'for_sale_20250227_0702.csv',
+    'for_sale_20250227_0705.csv'
 
 ]
 ZILLOW_RENT_DATA_FILE = 'zillow_rent_data.csv'
-OUTPUT_FINAL_FILE = 'investment_analysis_resultsTEST.csv'
+OUTPUT_FINAL_FILE = 'final.csv'
 
 # Temporary files for intermediate steps
 TEMP_DIR = 'temp_files'
@@ -1058,6 +1180,24 @@ def calculate_investment_returns(row, metrics):
 # MAIN PROCESSING FUNCTIONS
 # =====================================================================
 
+def process_row_values(row):
+    """
+    Process a CSV row to format phone numbers and round dollar values.
+    Updates the row in place.
+    """
+    # Format phone numbers
+    if 'agent_phones' in row:
+        row['agent_phones'] = format_phone_number(row['agent_phones'], extract_numbers_only=True)
+    if 'office_phones' in row:
+        row['office_phones'] = format_phone_number(row['office_phones'], extract_numbers_only=True)
+    
+    # Round all dollar values
+    for field in DOLLAR_FIELDS:
+        if field in row and row[field]:
+            row[field] = round_price(row[field])
+            
+    return row
+
 def process_rental_estimates_for_file(input_file, output_file, zori_data):
     """
     Process properties in a specific file and calculate ZORI-based rental estimates.
@@ -1090,12 +1230,25 @@ def process_rental_estimates_for_file(input_file, output_file, zori_data):
         
         count = 0
         for row in reader:
+            row = process_row_values(row)
+            # Replace the phone formatting code in each function with:
+            if 'agent_phones' in row:
+                row['agent_phones'] = format_phone_number(row['agent_phones'], extract_numbers_only=True)
+            if 'office_phones' in row:
+                row['office_phones'] = format_phone_number(row['office_phones'], extract_numbers_only=True)
+                
             # Ensure list_price is an integer
             if 'list_price' in row and row['list_price']:
                 try:
-                    row['list_price'] = int(float(row['list_price']))
+                    row['list_price'] = round_price(row['list_price'])
                 except (ValueError, TypeError):
                     pass
+                    
+            # Round other price fields
+            for field in ['list_price_min', 'list_price_max', 'sold_price', 
+                          'assessed_value', 'estimated_value']:
+                if field in row and row[field]:
+                    row[field] = round_price(row[field])
                     
             # Calculate ZORI-based rental estimate
             monthly_rent, annual_rent, growth_rate, projections, grm = estimate_rental_income(
@@ -1103,14 +1256,14 @@ def process_rental_estimates_for_file(input_file, output_file, zori_data):
             
             # Add the values to the row
             if monthly_rent:
-                row['zori_monthly_rent'] = round(monthly_rent, 2)
-                row['zori_annual_rent'] = round(annual_rent, 2)
+                row['zori_monthly_rent'] = round_price(monthly_rent)
+                row['zori_annual_rent'] = round_price(annual_rent)
                 row['zori_growth_rate'] = round(growth_rate, 2)
                 row['gross_rent_multiplier'] = round(grm, 2) if grm else None
                 
                 # Add 5-year projections
                 for i, proj in enumerate(projections):
-                    row[f'zori_rent_year{i+1}'] = round(proj, 2)
+                    row[f'zori_rent_year{i+1}'] = round_price(proj)
             else:
                 row['zori_monthly_rent'] = None
                 row['zori_annual_rent'] = None
@@ -1130,6 +1283,7 @@ def process_rental_estimates_for_file(input_file, output_file, zori_data):
     print(f"Completed rental estimation for {count} properties in {input_file}")
     return count
 
+# Updated function - modify this function in the file
 def merge_csv_files(input_files, output_file):
     """
     Merge multiple CSV files into a single file, preserving headers.
@@ -1156,18 +1310,26 @@ def merge_csv_files(input_files, output_file):
             with open(file_path, 'r', newline='', encoding='utf-8') as infile:
                 reader = csv.DictReader(infile)
                 for row in reader:
-                    # Ensure list_price is an integer
-                    if 'list_price' in row and row['list_price']:
-                        try:
-                            row['list_price'] = int(float(row['list_price']))
-                        except (ValueError, TypeError):
-                            pass
+                    row = process_row_values(row)
+                    # Replace the phone formatting code in each function with:
+                    if 'agent_phones' in row:
+                        row['agent_phones'] = format_phone_number(row['agent_phones'], extract_numbers_only=True)
+                    if 'office_phones' in row:
+                        row['office_phones'] = format_phone_number(row['office_phones'], extract_numbers_only=True)
+                    
+                    # Round price-related fields
+                    for field in ['list_price', 'list_price_min', 'list_price_max', 'sold_price', 
+                                  'assessed_value', 'estimated_value', 'zori_monthly_rent', 'zori_annual_rent']:
+                        if field in row and row[field]:
+                            row[field] = round_price(row[field])
+                    
                     writer.writerow(row)
                     total_rows += 1
     
     print(f"Merged {total_rows} total rows into {output_file}")
     return total_rows
 
+# Updated function - modify this function in the file
 def process_investment_metrics_for_file(input_file, output_file):
     """
     Process properties with rental estimates and calculate investment metrics.
@@ -1196,19 +1358,28 @@ def process_investment_metrics_for_file(input_file, output_file):
         
         count = 0
         for row in reader:
-            # Ensure list_price is an integer
-            if 'list_price' in row and row['list_price']:
-                try:
-                    row['list_price'] = int(float(row['list_price']))
-                except (ValueError, TypeError):
-                    pass
+            row = process_row_values(row)
+            # Replace the phone formatting code in each function with:
+            if 'agent_phones' in row:
+                row['agent_phones'] = format_phone_number(row['agent_phones'], extract_numbers_only=True)
+            if 'office_phones' in row:
+                row['office_phones'] = format_phone_number(row['office_phones'], extract_numbers_only=True)
+                
+            # Round price-related fields
+            for field in ['list_price', 'list_price_min', 'list_price_max', 'sold_price', 
+                          'assessed_value', 'estimated_value', 'zori_monthly_rent', 'zori_annual_rent']:
+                if field in row and row[field]:
+                    row[field] = round_price(row[field])
                     
             # Calculate cash flow metrics
             metrics = calculate_cash_flow_metrics(row, is_zori_based=True)
             
             # Add metrics to the row
             for key, value in metrics.items():
-                row[key] = round(value, 2) if isinstance(value, (int, float)) else value
+                if key in ['monthly_rent', 'annual_rent', 'cash_equity', 'transaction_cost']:
+                    row[key] = round_price(value) if isinstance(value, (int, float)) else value
+                else:
+                    row[key] = round(value, 2) if isinstance(value, (int, float)) else value
                 
             writer.writerow(row)
             count += 1
@@ -1218,6 +1389,7 @@ def process_investment_metrics_for_file(input_file, output_file):
     print(f"Completed cash flow metrics for {count} properties in {input_file}")
     return count
 
+# Updated function - modify this function in the file
 def process_final_metrics_for_file(input_file, output_file):
     """
     Process properties with cash flow metrics and calculate final investment returns.
@@ -1240,7 +1412,7 @@ def process_final_metrics_for_file(input_file, output_file):
             'lcf_year1', 'lcf_year2', 'lcf_year3', 'lcf_year4', 'lcf_year5',
             'total_principal_paid', 'final_loan_balance', 'accumulated_cash_flow',
             'exit_cap_rate', 'exit_value', 'equity_at_exit', 'cash_on_cash', 'irr',
-            'total_return'  # Added the new total_return field
+            'total_return'
         ]
         
         fieldnames = reader.fieldnames + additional_fields
@@ -1249,12 +1421,19 @@ def process_final_metrics_for_file(input_file, output_file):
         
         count = 0
         for row in reader:
-            # Ensure list_price is an integer
-            if 'list_price' in row and row['list_price']:
-                try:
-                    row['list_price'] = int(float(row['list_price']))
-                except (ValueError, TypeError):
-                    pass
+            row = process_row_values(row)
+            # Replace the phone formatting code in each function with:
+            if 'agent_phones' in row:
+                row['agent_phones'] = format_phone_number(row['agent_phones'], extract_numbers_only=True)
+            if 'office_phones' in row:
+                row['office_phones'] = format_phone_number(row['office_phones'], extract_numbers_only=True)
+                
+            # Round price-related fields
+            for field in ['list_price', 'list_price_min', 'list_price_max', 'sold_price', 
+                          'assessed_value', 'estimated_value', 'monthly_rent', 'annual_rent',
+                          'cash_equity', 'transaction_cost']:
+                if field in row and row[field]:
+                    row[field] = round_price(row[field])
                     
             # Extract metrics to build the metrics dictionary
             metrics = {}
@@ -1291,7 +1470,11 @@ def process_final_metrics_for_file(input_file, output_file):
             
             # Add metrics to the row
             for key, value in metrics.items():
-                row[key] = round(value, 2) if isinstance(value, (int, float)) else value
+                if key in ['loan_amount', 'monthly_payment', 'annual_debt_service', 
+                          'exit_value', 'equity_at_exit']:
+                    row[key] = round_price(value) if isinstance(value, (int, float)) else value
+                else:
+                    row[key] = round(value, 2) if isinstance(value, (int, float)) else value
                 
             writer.writerow(row)
             count += 1
@@ -1322,6 +1505,7 @@ def filter_investment_outliers(input_file, output_file):
         filtered_count = 0
         
         for row in reader:
+            row = process_row_values(row)
             total_count += 1
             
             # Ensure list_price is an integer
