@@ -17,39 +17,145 @@ app = FastAPI(
 )
 
 # Enable CORS for frontend development
+# Fix the CORS configuration
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "https://harrison-frontend.vercel.app",  # Production frontend
-        "http://localhost:3000",                 # Local development (if needed)
+        "https://harrison-realestate.vercel.app",  # Removed trailing slash
+        "http://localhost:3000",
     ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-LOCAL_TESTING = False  # Set to False for production
+LOCAL_TESTING = False  # Changed to True for local testing
 
 
 # Initialize at startup
 def download_db_at_startup():
+    """Download database file from GCS at startup with better error handling and retries"""
+    db_path = 'final.db' if LOCAL_TESTING else '/tmp/final.db'
+    
+    # If running in local testing mode, skip download
     if LOCAL_TESTING:
         print("Running in local testing mode - using local database file")
+        if not os.path.exists(db_path):
+            print(f"WARNING: Local database '{db_path}' does not exist!")
+            # Create empty database if needed for local testing
+            conn = sqlite3.connect(db_path)
+            conn.close()
         return True
-    if not os.path.exists('/tmp/final_investment_properties.db'):
-        client = storage.Client()
-        bucket = client.bucket('arhammxo-hdb')
-        blob = bucket.blob('final_investment_properties.db')
-        blob.download_to_filename('/tmp/final_investment_properties.db')
     
-    print("Database downloaded successfully")
+    # For Cloud Run deployment
+    max_retries = 3
+    retry_count = 0
+    
+    while retry_count < max_retries:
+        try:
+            # Check if database already exists
+            if os.path.exists(db_path):
+                print(f"Database already exists at {db_path}")
+                # Verify database is valid by trying a simple query
+                try:
+                    conn = sqlite3.connect(db_path)
+                    cursor = conn.execute("PRAGMA integrity_check")
+                    result = cursor.fetchone()
+                    conn.close()
+                    if result and result[0] == "ok":
+                        print("Database integrity check passed")
+                        return True
+                    else:
+                        print("Database integrity check failed, redownloading")
+                        os.remove(db_path)
+                except Exception as e:
+                    print(f"Database verification failed: {str(e)}, redownloading")
+                    os.remove(db_path)
+            
+            # Download database file
+            print(f"Downloading database from GCS (attempt {retry_count + 1}/{max_retries})...")
+            client = storage.Client()
+            bucket = client.bucket('arhammxo-hdb')
+            blob = bucket.blob('final.db')
+            
+            # Use a shorter timeout to allow for retries
+            blob.download_to_filename(db_path, timeout=120)
+            
+            # Verify download was successful
+            if os.path.exists(db_path) and os.path.getsize(db_path) > 0:
+                print(f"Database downloaded successfully ({os.path.getsize(db_path)} bytes)")
+                return True
+            else:
+                print("Downloaded file is empty or doesn't exist")
+                retry_count += 1
+                
+        except Exception as e:
+            print(f"Database download failed (attempt {retry_count + 1}/{max_retries}): {str(e)}")
+            retry_count += 1
+            # Wait before retrying
+            import time
+            time.sleep(2)
+    
+    print("All database download attempts failed")
+    # At this point, we failed to download the database after multiple attempts
+    # Return False to indicate failure
+    return False
 
 # Call this function early in your app initialization
-download_db_at_startup()
+db_initialized = download_db_at_startup()
+
+# Add startup event to ensure database is ready
+@app.on_event("startup")
+async def startup_event():
+    """Verify database connectivity on app startup"""
+    if not db_initialized:
+        # Log the error but allow app to start (optional - you can also raise an exception to prevent startup)
+        print("WARNING: Database initialization failed during startup! Application may not function correctly.")
+    
+    try:
+        # Test database connection
+        conn = get_db_connection()
+        cursor = conn.execute("SELECT sqlite_version();")
+        version = cursor.fetchone()[0]
+        print(f"Successfully connected to SQLite database (version {version})")
+        conn.close()
+    except Exception as e:
+        print(f"ERROR: Database connection test failed: {str(e)}")
+        # Optionally, you can raise the exception to prevent the app from starting
+        # raise e
+
+# Improve the health check to better report application status
+@app.get("/health", tags=["System"])
+async def health_check():
+    """Check API health with detailed database status"""
+    health_status = {
+        "status": "unhealthy",
+        "database_initialized": db_initialized,
+        "timestamp": datetime.now().isoformat()
+    }
+    
+    try:
+        conn = get_db_connection()
+        cursor = conn.execute("SELECT COUNT(*) FROM properties")
+        property_count = cursor.fetchone()[0]
+        conn.close()
+        
+        health_status.update({
+            "status": "healthy",
+            "database": "connected",
+            "property_count": property_count
+        })
+    except Exception as e:
+        health_status.update({
+            "database": "disconnected",
+            "error": str(e)
+        })
+    
+    return health_status
 
 # Modify your connection function
 def get_db_connection():
-    db_path = 'final_investment_properties.db' if LOCAL_TESTING else '/tmp/final_investment_properties.db'
+    db_path = 'final.db' if LOCAL_TESTING else '/tmp/final.db'
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     return conn
@@ -1386,6 +1492,67 @@ async def get_bedroom_stats():
     finally:
         conn.close()
 
+from typing import Dict, Any
+
+@app.get("/audit/{property_id}", tags=["Audit"], response_model=Dict[str, Any])
+async def get_property_audit(property_id: int):
+    """
+    API endpoint to get audit data for a property.
+    Returns all calculation audit data from various audit tables for transparency.
+    """
+    conn = get_db_connection()
+    try:
+        cursor = conn.cursor()
+        
+        # Get all audit tables
+        audit_tables = [
+            'rental_income_audit',
+            'cash_flow_audit',
+            'mortgage_audit',
+            'investment_returns_audit',
+            'cash_flow_projections_audit'
+        ]
+        
+        # Also check for enhanced tables
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE '%enhanced'")
+        enhanced_tables = [row['name'] for row in cursor.fetchall()]
+        audit_tables.extend(enhanced_tables)
+        
+        # Check for calculation audit log
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='calculation_audit_log'")
+        if cursor.fetchone():
+            audit_tables.append('calculation_audit_log')
+        
+        result = {
+            'property_id': property_id,
+            'audit_data': {}
+        }
+        
+        # Get property details
+        cursor.execute('SELECT * FROM properties WHERE property_id = ?', (property_id,))
+        property_data = cursor.fetchone()
+        if not property_data:
+            raise HTTPException(status_code=404, detail=f"Property ID {property_id} not found")
+            
+        result['property'] = dict(property_data)
+        
+        # Get data from each audit table
+        for table in audit_tables:
+            try:
+                cursor.execute(f'SELECT * FROM {table} WHERE property_id = ?', (property_id,))
+                rows = cursor.fetchall()
+                if rows:
+                    result['audit_data'][table] = [dict(row) for row in rows]
+            except Exception as e:
+                # Table might not exist or have a different structure
+                # Log the error but continue with other tables
+                print(f"Error querying {table}: {str(e)}")
+                continue
+        
+        return result
+    finally:
+        conn.close()
+        
 @app.get("/investment-analysis/top-ranked", tags=["Investment Analysis"], response_model=List[PropertySearchResult])
 async def get_top_ranked_properties(
     limit: int = Query(20, ge=1, le=100, description="Number of properties to return"),
@@ -1680,6 +1847,21 @@ async def health_check():
         }
 
 # Main
+# Main
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+    port = int(os.environ.get("PORT", 8080))
+    
+    # Log startup information
+    print(f"Starting server on port {port}")
+    print(f"LOCAL_TESTING mode: {LOCAL_TESTING}")
+    
+    uvicorn.run(
+        app, 
+        host="0.0.0.0",  # Bind to all interfaces
+        port=port,
+        log_level="info",
+        timeout_keep_alive=300,  # Keep-alive timeout
+        # Lower backlog for Cloud Run (which has limited concurrent connections)
+        backlog=128
+    )
