@@ -13,7 +13,7 @@ from google.cloud import storage
 app = FastAPI(
     title="Real Estate Investment API",
     description="API for analyzing real estate investment properties with detailed metrics and neighborhood analysis",
-    version="1.1.0"
+    version="1.2.0"
 )
 
 # Enable CORS for frontend development
@@ -22,6 +22,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "https://harrison-realestate.vercel.app",  # Removed trailing slash
+        "https://investhawk-2.netlify.app",
         "http://localhost:3000",
     ],
     allow_credentials=True,
