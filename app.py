@@ -888,6 +888,8 @@ async def get_property_types():
 
 @app.get("/properties/", tags=["Properties"], response_model=PaginatedResponse)
 async def get_properties(
+    min_price: Optional[int] = Query(None, ge=0, description="Minimum property price"),
+    max_price: Optional[int] = Query(None, gt=0, description="Maximum property price"),
     max_sqft: Optional[int] = Query(None, gt=0, description="Maximum square footage"),
     min_sqft: Optional[int] = Query(None, gt=0, description="Minimum square footage"),
     criteria: Optional[InvestmentCriteria] = None,
@@ -908,6 +910,14 @@ async def get_properties(
         
     if max_sqft is not None:
         criteria.max_sqft = max_sqft
+
+    if min_price is not None:
+        criteria.min_price = min_price
+        price_range.min_price = min_price
+        
+    if max_price is not None:
+        criteria.max_price = max_price
+        price_range.max_price = max_price
     
     conn = get_db_connection()
     try:
@@ -957,6 +967,8 @@ async def get_properties(
 @app.get("/properties/state/{state}", tags=["Properties"], response_model=PaginatedResponse)
 async def get_properties_by_state(
     state: str,
+    min_price: Optional[int] = Query(None, ge=0, description="Minimum property price"),
+    max_price: Optional[int] = Query(None, gt=0, description="Maximum property price"),
     max_sqft: Optional[int] = Query(None, gt=0, description="Maximum square footage"),
     min_sqft: Optional[int] = Query(None, gt=0, description="Minimum square footage"),
     criteria: Optional[InvestmentCriteria] = None,
@@ -976,6 +988,14 @@ async def get_properties_by_state(
         
     if max_sqft is not None:
         criteria.max_sqft = max_sqft
+    
+    if min_price is not None:
+        criteria.min_price = min_price
+        price_range.min_price = min_price
+        
+    if max_price is not None:
+        criteria.max_price = max_price
+        price_range.max_price = max_price
     
     conn = get_db_connection()
     try:
@@ -1029,6 +1049,8 @@ async def get_properties_by_state(
 async def get_properties_by_city(
     city: str,
     state: Optional[str] = None,
+    min_price: Optional[int] = Query(None, ge=0, description="Minimum property price"),
+    max_price: Optional[int] = Query(None, gt=0, description="Maximum property price"),
     max_sqft: Optional[int] = Query(None, gt=0, description="Maximum square footage"),
     min_sqft: Optional[int] = Query(None, gt=0, description="Minimum square footage"),
     criteria: Optional[InvestmentCriteria] = None,
@@ -1049,6 +1071,14 @@ async def get_properties_by_city(
         
     if max_sqft is not None:
         criteria.max_sqft = max_sqft
+
+    if min_price is not None:
+        criteria.min_price = min_price
+        price_range.min_price = min_price
+        
+    if max_price is not None:
+        criteria.max_price = max_price
+        price_range.max_price = max_price
     
     conn = get_db_connection()
     try:
@@ -1108,6 +1138,8 @@ async def get_properties_by_city(
 @app.get("/properties/zipcode/{zipcode}", tags=["Properties"], response_model=PaginatedResponse)
 async def get_properties_by_zipcode(
     zipcode: int = Path(..., description="ZIP code to search for"),
+    min_price: Optional[int] = Query(None, ge=0, description="Minimum property price"),
+    max_price: Optional[int] = Query(None, gt=0, description="Maximum property price"),
     max_sqft: Optional[int] = Query(None, gt=0, description="Maximum square footage"),
     min_sqft: Optional[int] = Query(None, gt=0, description="Minimum square footage"),
     criteria: Optional[InvestmentCriteria] = None,
@@ -1127,6 +1159,14 @@ async def get_properties_by_zipcode(
         
     if max_sqft is not None:
         criteria.max_sqft = max_sqft
+
+    if min_price is not None:
+        criteria.min_price = min_price
+        price_range.min_price = min_price
+        
+    if max_price is not None:
+        criteria.max_price = max_price
+        price_range.max_price = max_price
     
     conn = get_db_connection()
     try:
