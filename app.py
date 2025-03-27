@@ -10,8 +10,8 @@ from google.cloud import storage
 
 app = FastAPI(
     title="Investhawk API",
-    description="Investhawk DB - MULTISELECT STYLE QUERY",
-    version="1.7.0"
+    description="Investhawk DB - MULTISELECT STYLE QUERY | LAST UPDATE: Bath Query Fix",
+    version="1.7.1"
 )
 
 # Enable CORS for frontend development
@@ -603,107 +603,44 @@ class PaginatedResponse(BaseModel):
 
 # Helper function to apply investment criteria to query
 def apply_investment_criteria(query, params, criteria: InvestmentCriteria, styles=None):
-    """
-    Apply investment criteria to a SQL query and parameter list.
-    
-    Args:
-        query: SQL query string
-        params: List of query parameters
-        criteria: InvestmentCriteria object
-        
-    Returns:
-        Tuple of (updated query, updated params)
-    """
-    if criteria.min_cap_rate > 0:
-        query += " AND cap_rate >= ?"
-        params.append(criteria.min_cap_rate)
-        
-    if criteria.min_cash_yield > 0:
-        query += " AND cash_yield >= ?"
-        params.append(criteria.min_cash_yield)
-        
-    if criteria.min_irr > 0:
-        query += " AND irr >= ?"
-        params.append(criteria.min_irr)
-        
-    if criteria.min_cash_on_cash > 0:
-        query += " AND cash_on_cash >= ?"
-        params.append(criteria.min_cash_on_cash)
-        
-    if criteria.min_total_return > 0:
-        query += " AND total_return >= ?"
-        params.append(criteria.min_total_return)
-        
-    if criteria.min_monthly_cash_flow > 0:
-        query += " AND lcf_year1 / 12 >= ?"
-        params.append(criteria.min_monthly_cash_flow)
-        
-    if criteria.min_investment_ranking > 0:
-        query += " AND investment_ranking >= ?"
-        params.append(criteria.min_investment_ranking)
-        
-    if criteria.max_price:
-        query += " AND list_price <= ?"
-        params.append(criteria.max_price)
-        
-    if criteria.min_price:
-        query += " AND list_price >= ?"
-        params.append(criteria.min_price)
-        
-    if criteria.min_beds:
-        query += " AND beds >= ?"
-        params.append(criteria.min_beds)
-        
-    if criteria.min_baths:
-        query += " AND (full_baths + (half_baths * 0.5)) >= ?"
-        params.append(criteria.min_baths)
-        
-    if criteria.min_sqft:
-        query += " AND sqft >= ?"
-        params.append(criteria.min_sqft)
-        
-    if criteria.min_sqft:
-        query += " AND sqft >= ?"
-        params.append(criteria.min_sqft)
-        
-    if criteria.max_sqft:
-        query += " AND sqft <= ?"
-        params.append(criteria.max_sqft)
-            
-    if criteria.min_beds:
-        query += " AND beds >= ?"
-        params.append(criteria.min_beds)
-    
-    if criteria.max_beds:
-        query += " AND beds <= ?"
-        params.append(criteria.max_beds)
-    
-    if criteria.min_baths:
-        query += " AND (full_baths + (half_baths * 0.5)) >= ?"
-        params.append(criteria.min_baths)
-    
-    if criteria.max_baths:
-        query += " AND (full_baths + (half_baths * 0.5)) <= ?"
-        params.append(criteria.max_baths)
-    
-    if criteria.min_sqft:
-        query += " AND sqft >= ?"
-        params.append(criteria.min_sqft)
-        
-    if criteria.max_sqft:
-        query += " AND sqft <= ?"
-        params.append(criteria.max_sqft)
-        
-    # Handle multiple styles
+    # Criteria mapping: (criteria_field, type, column_name, optional_transform)
+    CRITERIA_MAP = [
+        ('min_cap_rate', 'min', 'cap_rate', None),
+        ('min_cash_yield', 'min', 'cash_yield', None),
+        ('min_irr', 'min', 'irr', None),
+        ('min_cash_on_cash', 'min', 'cash_on_cash', None),
+        ('min_total_return', 'min', 'total_return', None),
+        ('min_monthly_cash_flow', 'min', 'lcf_year1', 'lcf_year1 / 12'),
+        ('min_investment_ranking', 'min', 'investment_ranking', None),
+        ('max_price', 'max', 'list_price', None),
+        ('min_price', 'min', 'list_price', None),
+        ('min_sqft', 'min', 'sqft', None),
+        ('max_sqft', 'max', 'sqft', None),
+        ('min_beds', 'min', 'beds', None),
+        ('max_beds', 'max', 'beds', None),
+        ('min_baths', 'min', 'baths', None),
+        ('max_baths', 'max', 'baths', None),
+    ]
+
+    for field, type_, column, transform in CRITERIA_MAP:
+        value = getattr(criteria, field, None)
+        if value is None or value <= 0:
+            continue
+
+        col_expr = transform or column
+        operator = '>=' if type_ == 'min' else '<='
+        query += f" AND {col_expr} {operator} ?"
+        params.append(value)
+
+    # Handle style/property type criteria
     if styles and len(styles) > 0:
         placeholders = ", ".join("?" for _ in styles)
         query += f" AND style IN ({placeholders})"
         params.extend(styles)
-    # Backward compatibility for single style in criteria
     elif criteria.property_type:
         query += " AND style = ?"
         params.append(criteria.property_type)
-        
+
     return query, params
 
 # Helper function to apply price range filtering
