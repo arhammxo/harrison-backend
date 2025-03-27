@@ -1053,37 +1053,57 @@ def calculate_mortgage_metrics(row, metrics):
         # Calculate monthly payment
         monthly_rate = interest_rate / 12
         total_periods = loan_term * 12
-        if monthly_rate > 0 and total_periods > 0:
-            monthly_payment = npf.pmt(monthly_rate, total_periods, -loan_amount)
-            metrics['monthly_payment'] = monthly_payment
-            metrics['annual_debt_service'] = monthly_payment * 12
-        else:
-            metrics['monthly_payment'] = 0
-            metrics['annual_debt_service'] = 0
-            
+        
+        # Initialize monthly_payment with default value
+        monthly_payment = 0
+        metrics['monthly_payment'] = 0
+        metrics['annual_debt_service'] = 0
+        
+        if monthly_rate > 0 and total_periods > 0 and loan_amount > 0:
+            try:
+                monthly_payment = npf.pmt(monthly_rate, total_periods, -loan_amount)
+                if not math.isnan(monthly_payment) and not math.isinf(monthly_payment):
+                    metrics['monthly_payment'] = monthly_payment
+                    metrics['annual_debt_service'] = monthly_payment * 12
+            except Exception as e:
+                print(f"Error calculating pmt function: {e}")
+                monthly_payment = 0
+        
         # Calculate principal payments for years 1-5
         total_principal = 0
         remaining_balance = loan_amount
         
+        # Only calculate principal payments if monthly payment is positive
+        if monthly_payment > 0:
+            for year in range(1, 6):
+                year_start_period = (year - 1) * 12 + 1
+                year_end_period = year * 12
+                
+                # Calculate principal paid this year
+                principal_paid = 0
+                for period in range(year_start_period, year_end_period + 1):
+                    interest_payment = remaining_balance * monthly_rate
+                    principal_payment = max(0, monthly_payment - interest_payment)
+                    principal_paid += principal_payment
+                    remaining_balance -= principal_payment
+                
+                metrics[f'principal_paid_year{year}'] = principal_paid
+                total_principal += principal_paid
+                
+                # Store ending balance at each year
+                metrics[f'loan_balance_year{year}'] = remaining_balance
+        else:
+            # Set default values for all principal-related metrics
+            for year in range(1, 6):
+                metrics[f'principal_paid_year{year}'] = 0
+                metrics[f'loan_balance_year{year}'] = loan_amount
+        
+        # Store total principal payments and final mortgage balance
+        metrics['total_principal_paid'] = total_principal
+        metrics['final_loan_balance'] = remaining_balance
+        
+        # Calculate lcf for each year
         for year in range(1, 6):
-            year_start_period = (year - 1) * 12 + 1
-            year_end_period = year * 12
-            
-            # Calculate principal paid this year
-            principal_paid = 0
-            for period in range(year_start_period, year_end_period + 1):
-                interest_payment = remaining_balance * monthly_rate
-                principal_payment = monthly_payment - interest_payment
-                principal_paid += principal_payment
-                remaining_balance -= principal_payment
-            
-            metrics[f'principal_paid_year{year}'] = principal_paid
-            total_principal += principal_paid
-            
-            # Store ending balance at each year
-            metrics[f'loan_balance_year{year}'] = remaining_balance
-            
-            # Ensure ucf_year{year} exists before calculating lcf
             ucf_key = f'ucf_year{year}'
             if ucf_key in metrics:
                 # Calculate levered cash flow (LCF)
@@ -1091,11 +1111,7 @@ def calculate_mortgage_metrics(row, metrics):
             else:
                 metrics[f'lcf_year{year}'] = 0  # Default if UCF is missing
         
-        # Store total principal payments and final mortgage balance
-        metrics['total_principal_paid'] = total_principal
-        metrics['final_loan_balance'] = remaining_balance
-        
-        # Calculate accumulated cash flow (ensure lcf values exist)
+        # Calculate accumulated cash flow
         lcf_sum = 0
         for year in range(1, 6):
             lcf_key = f'lcf_year{year}'
@@ -1109,7 +1125,7 @@ def calculate_mortgage_metrics(row, metrics):
     except Exception as e:
         print(f"Error calculating mortgage metrics: {e}")
         return metrics
-
+    
 def calculate_investment_returns(row, metrics):
     """
     Calculate investment return metrics including exit value, cash-on-cash return, and IRR.
