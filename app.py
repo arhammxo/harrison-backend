@@ -3,17 +3,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from typing import List, Optional, Dict, Any
 import sqlite3
 from pydantic import BaseModel, Field, validator
-import json
 import math
 from datetime import datetime
 import os
-import subprocess
 from google.cloud import storage
 
 app = FastAPI(
-    title="Real Estate Investment API",
-    description="API for analyzing real estate investment properties with detailed metrics and neighborhood analysis",
-    version="1.5.0"
+    title="Investhawk API",
+    description="Investhawk DB - MULTISELECT STYLE QUERY",
+    version="1.7.0"
 )
 
 # Enable CORS for frontend development
@@ -21,7 +19,7 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "https://harrison-realestate.vercel.app",  # Removed trailing slash
+        "https://harrison-realestate.vercel.app", 
         "https://investhawk-2.netlify.app",
         "http://localhost:3000",
     ],
@@ -604,7 +602,7 @@ class PaginatedResponse(BaseModel):
     results: List[Any]
 
 # Helper function to apply investment criteria to query
-def apply_investment_criteria(query, params, criteria: InvestmentCriteria):
+def apply_investment_criteria(query, params, criteria: InvestmentCriteria, styles=None):
     """
     Apply investment criteria to a SQL query and parameter list.
     
@@ -671,15 +669,6 @@ def apply_investment_criteria(query, params, criteria: InvestmentCriteria):
     if criteria.max_sqft:
         query += " AND sqft <= ?"
         params.append(criteria.max_sqft)
-        
-    if criteria.property_type:
-        query += " AND style = ?"
-        params.append(criteria.property_type)
-
-    if criteria.property_type:
-        # Don't use joins anymore since the view now includes style
-        query += " AND style = ?"
-        params.append(criteria.property_type)
             
     if criteria.min_beds:
         query += " AND beds >= ?"
@@ -705,7 +694,13 @@ def apply_investment_criteria(query, params, criteria: InvestmentCriteria):
         query += " AND sqft <= ?"
         params.append(criteria.max_sqft)
         
-    if criteria.property_type:
+    # Handle multiple styles
+    if styles and len(styles) > 0:
+        placeholders = ", ".join("?" for _ in styles)
+        query += f" AND style IN ({placeholders})"
+        params.extend(styles)
+    # Backward compatibility for single style in criteria
+    elif criteria.property_type:
         query += " AND style = ?"
         params.append(criteria.property_type)
         
@@ -923,7 +918,7 @@ async def get_property_types():
 
 @app.get("/properties/", tags=["Properties"], response_model=PaginatedResponse)
 async def get_properties(
-    style: Optional[str] = Query(None, description="Property style/type"),
+    style: List[str] = Query(None, description="Property style/type (can specify multiple)"),
     min_price: Optional[int] = Query(None, ge=0, description="Minimum property price"),
     max_price: Optional[int] = Query(None, gt=0, description="Maximum property price"),
     min_beds: Optional[int] = Query(None, ge=0, description="Minimum number of bedrooms"),
@@ -959,8 +954,7 @@ async def get_properties(
         criteria.max_price = max_price
         price_range.max_price = max_price
     
-    if style is not None:
-        criteria.property_type = style
+    styles = style if style else None
 
     if min_beds is not None:
         criteria.min_beds = min_beds
@@ -986,8 +980,13 @@ async def get_properties(
         # Apply price range filtering
         query, params = apply_price_range(query, params, price_range)
         
-        # Apply investment criteria
-        query, params = apply_investment_criteria(query, params, criteria)
+        # Apply investment criteria (pass styles separately)
+        query, params = apply_investment_criteria(query, params, criteria, style)
+        
+        # Get total count before pagination
+        count_query = f"SELECT COUNT(*) FROM ({query})"
+        cursor = conn.execute(count_query, params)
+        total_count = cursor.fetchone()[0]
         
         # Get total count before pagination
         count_query = f"SELECT COUNT(*) FROM ({query})"
@@ -1022,7 +1021,7 @@ async def get_properties(
 @app.get("/properties/state/{state}", tags=["Properties"], response_model=PaginatedResponse)
 async def get_properties_by_state(
     state: str,
-    style: Optional[str] = Query(None, description="Property style/type"),
+    style: List[str] = Query(None, description="Property style/type (can specify multiple)"),
     min_price: Optional[int] = Query(None, ge=0, description="Minimum property price"),
     max_price: Optional[int] = Query(None, gt=0, description="Maximum property price"),
     min_beds: Optional[int] = Query(None, ge=0, description="Minimum number of bedrooms"),
@@ -1057,8 +1056,7 @@ async def get_properties_by_state(
         criteria.max_price = max_price
         price_range.max_price = max_price
 
-    if style is not None:
-        criteria.property_type = style
+    styles = style if style else None
 
     if min_beds is not None:
         criteria.min_beds = min_beds
@@ -1084,8 +1082,13 @@ async def get_properties_by_state(
         # Apply price range filtering
         query, params = apply_price_range(query, params, price_range)
         
-        # Apply investment criteria
-        query, params = apply_investment_criteria(query, params, criteria)
+        # Apply investment criteria (pass styles separately)
+        query, params = apply_investment_criteria(query, params, criteria, style)
+        
+        # Get total count before pagination
+        count_query = f"SELECT COUNT(*) FROM ({query})"
+        cursor = conn.execute(count_query, params)
+        total_count = cursor.fetchone()[0]
         
         # Get total count before pagination
         count_query = f"SELECT COUNT(*) FROM ({query})"
@@ -1124,7 +1127,7 @@ async def get_properties_by_state(
 async def get_properties_by_city(
     city: str,
     state: Optional[str] = None,
-    style: Optional[str] = Query(None, description="Property style/type"),
+    style: List[str] = Query(None, description="Property style/type (can specify multiple)"),
     min_price: Optional[int] = Query(None, ge=0, description="Minimum property price"),
     max_price: Optional[int] = Query(None, gt=0, description="Maximum property price"),
     min_beds: Optional[int] = Query(None, ge=0, description="Minimum number of bedrooms"),
@@ -1160,8 +1163,7 @@ async def get_properties_by_city(
         criteria.max_price = max_price
         price_range.max_price = max_price
 
-    if style is not None:
-        criteria.property_type = style
+    styles = style if style else None
 
     if min_beds is not None:
         criteria.min_beds = min_beds
@@ -1191,8 +1193,13 @@ async def get_properties_by_city(
         # Apply price range filtering
         query, params = apply_price_range(query, params, price_range)
         
-        # Apply investment criteria
-        query, params = apply_investment_criteria(query, params, criteria)
+        # Apply investment criteria (pass styles separately)
+        query, params = apply_investment_criteria(query, params, criteria, style)
+        
+        # Get total count before pagination
+        count_query = f"SELECT COUNT(*) FROM ({query})"
+        cursor = conn.execute(count_query, params)
+        total_count = cursor.fetchone()[0]
         
         # Get total count before pagination
         count_query = f"SELECT COUNT(*) FROM ({query})"
@@ -1233,7 +1240,7 @@ async def get_properties_by_city(
 @app.get("/properties/zipcode/{zipcode}", tags=["Properties"], response_model=PaginatedResponse)
 async def get_properties_by_zipcode(
     zipcode: int = Path(..., description="ZIP code to search for"),
-    style: Optional[str] = Query(None, description="Property style/type"),
+    style: List[str] = Query(None, description="Property style/type (can specify multiple)"),
     min_price: Optional[int] = Query(None, ge=0, description="Minimum property price"),
     max_price: Optional[int] = Query(None, gt=0, description="Maximum property price"),
     min_beds: Optional[int] = Query(None, ge=0, description="Minimum number of bedrooms"),
@@ -1268,8 +1275,7 @@ async def get_properties_by_zipcode(
         criteria.max_price = max_price
         price_range.max_price = max_price
 
-    if style is not None:
-        criteria.property_type = style
+    styles = style if style else None
 
     if min_beds is not None:
         criteria.min_beds = min_beds
@@ -1295,8 +1301,13 @@ async def get_properties_by_zipcode(
         # Apply price range filtering
         query, params = apply_price_range(query, params, price_range)
         
-        # Apply investment criteria
-        query, params = apply_investment_criteria(query, params, criteria)
+        # Apply investment criteria (pass styles separately)
+        query, params = apply_investment_criteria(query, params, criteria, style)
+        
+        # Get total count before pagination
+        count_query = f"SELECT COUNT(*) FROM ({query})"
+        cursor = conn.execute(count_query, params)
+        total_count = cursor.fetchone()[0]
         
         # Get total count before pagination
         count_query = f"SELECT COUNT(*) FROM ({query})"

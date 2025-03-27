@@ -3,3 +3,5 @@
 /old
 *.log
 api_req.txt
+.dockerignore
+__pycache__
