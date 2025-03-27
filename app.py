@@ -13,7 +13,7 @@ from google.cloud import storage
 app = FastAPI(
     title="Real Estate Investment API",
     description="API for analyzing real estate investment properties with detailed metrics and neighborhood analysis",
-    version="1.2.0"
+    version="1.3.0"
 )
 
 # Enable CORS for frontend development
