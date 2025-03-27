@@ -13,7 +13,7 @@ from google.cloud import storage
 app = FastAPI(
     title="Real Estate Investment API",
     description="API for analyzing real estate investment properties with detailed metrics and neighborhood analysis",
-    version="1.3.0"
+    version="1.5.0"
 )
 
 # Enable CORS for frontend development
@@ -465,9 +465,11 @@ class InvestmentCriteria(BaseModel):
     max_price: Optional[int] = Field(default=None, gt=0, description="Maximum property price")
     min_price: Optional[int] = Field(default=None, ge=0, description="Minimum property price")
     min_beds: Optional[int] = Field(default=None, ge=0, description="Minimum number of bedrooms")
+    max_beds: Optional[int] = Field(default=None, ge=0, description="Maximum number of bedrooms") # New parameter
     min_baths: Optional[float] = Field(default=None, ge=0, description="Minimum number of bathrooms")
+    max_baths: Optional[float] = Field(default=None, ge=0, description="Maximum number of bathrooms") # New parameter
     min_sqft: Optional[int] = Field(default=None, gt=0, description="Minimum square footage")
-    max_sqft: Optional[int] = Field(default=None, gt=0, description="Maximum square footage")  # New parameter
+    max_sqft: Optional[int] = Field(default=None, gt=0, description="Maximum square footage")
     property_type: Optional[str] = Field(default=None, description="Property type/style")
     
     class Config:
@@ -679,6 +681,34 @@ def apply_investment_criteria(query, params, criteria: InvestmentCriteria):
         query += " AND style = ?"
         params.append(criteria.property_type)
             
+    if criteria.min_beds:
+        query += " AND beds >= ?"
+        params.append(criteria.min_beds)
+    
+    if criteria.max_beds:
+        query += " AND beds <= ?"
+        params.append(criteria.max_beds)
+    
+    if criteria.min_baths:
+        query += " AND (full_baths + (half_baths * 0.5)) >= ?"
+        params.append(criteria.min_baths)
+    
+    if criteria.max_baths:
+        query += " AND (full_baths + (half_baths * 0.5)) <= ?"
+        params.append(criteria.max_baths)
+    
+    if criteria.min_sqft:
+        query += " AND sqft >= ?"
+        params.append(criteria.min_sqft)
+        
+    if criteria.max_sqft:
+        query += " AND sqft <= ?"
+        params.append(criteria.max_sqft)
+        
+    if criteria.property_type:
+        query += " AND style = ?"
+        params.append(criteria.property_type)
+        
     return query, params
 
 # Helper function to apply price range filtering
@@ -804,9 +834,9 @@ def map_to_search_result(property_data):
 async def root():
     """API root endpoint with basic information"""
     return {
-        "name": "Real Estate Investment API",
-        "version": "1.1.0",
-        "description": "API for analyzing real estate investment properties with detailed metrics",
+        "name": "Investhawk API",
+        "version": "1.5.0",
+        "description": "Investhawk-API",
         "endpoints": {
             "properties": "/properties/",
             "properties_by_state": "/properties/state/{state}",
@@ -896,8 +926,12 @@ async def get_properties(
     style: Optional[str] = Query(None, description="Property style/type"),
     min_price: Optional[int] = Query(None, ge=0, description="Minimum property price"),
     max_price: Optional[int] = Query(None, gt=0, description="Maximum property price"),
-    max_sqft: Optional[int] = Query(None, gt=0, description="Maximum square footage"),
+    min_beds: Optional[int] = Query(None, ge=0, description="Minimum number of bedrooms"),
+    max_beds: Optional[int] = Query(None, ge=0, description="Maximum number of bedrooms"),
+    min_baths: Optional[float] = Query(None, ge=0, description="Minimum number of bathrooms"),
+    max_baths: Optional[float] = Query(None, ge=0, description="Maximum number of bathrooms"),
     min_sqft: Optional[int] = Query(None, gt=0, description="Minimum square footage"),
+    max_sqft: Optional[int] = Query(None, gt=0, description="Maximum square footage"),
     criteria: Optional[InvestmentCriteria] = None,
     price_range: PriceRangeParams = Depends(PriceRangeParams),
     sorting: Dict = Depends(sorting_params),
@@ -927,6 +961,18 @@ async def get_properties(
     
     if style is not None:
         criteria.property_type = style
+
+    if min_beds is not None:
+        criteria.min_beds = min_beds
+    
+    if max_beds is not None:
+        criteria.max_beds = max_beds
+    
+    if min_baths is not None:
+        criteria.min_baths = min_baths
+    
+    if max_baths is not None:
+        criteria.max_baths = max_baths
     
     conn = get_db_connection()
     try:
@@ -979,8 +1025,12 @@ async def get_properties_by_state(
     style: Optional[str] = Query(None, description="Property style/type"),
     min_price: Optional[int] = Query(None, ge=0, description="Minimum property price"),
     max_price: Optional[int] = Query(None, gt=0, description="Maximum property price"),
-    max_sqft: Optional[int] = Query(None, gt=0, description="Maximum square footage"),
+    min_beds: Optional[int] = Query(None, ge=0, description="Minimum number of bedrooms"),
+    max_beds: Optional[int] = Query(None, ge=0, description="Maximum number of bedrooms"),
+    min_baths: Optional[float] = Query(None, ge=0, description="Minimum number of bathrooms"),
+    max_baths: Optional[float] = Query(None, ge=0, description="Maximum number of bathrooms"),
     min_sqft: Optional[int] = Query(None, gt=0, description="Minimum square footage"),
+    max_sqft: Optional[int] = Query(None, gt=0, description="Maximum square footage"),
     criteria: Optional[InvestmentCriteria] = None,
     price_range: PriceRangeParams = Depends(PriceRangeParams),
     sorting: Dict = Depends(sorting_params),
@@ -1009,6 +1059,18 @@ async def get_properties_by_state(
 
     if style is not None:
         criteria.property_type = style
+
+    if min_beds is not None:
+        criteria.min_beds = min_beds
+    
+    if max_beds is not None:
+        criteria.max_beds = max_beds
+    
+    if min_baths is not None:
+        criteria.min_baths = min_baths
+    
+    if max_baths is not None:
+        criteria.max_baths = max_baths
     
     conn = get_db_connection()
     try:
@@ -1065,8 +1127,12 @@ async def get_properties_by_city(
     style: Optional[str] = Query(None, description="Property style/type"),
     min_price: Optional[int] = Query(None, ge=0, description="Minimum property price"),
     max_price: Optional[int] = Query(None, gt=0, description="Maximum property price"),
-    max_sqft: Optional[int] = Query(None, gt=0, description="Maximum square footage"),
+    min_beds: Optional[int] = Query(None, ge=0, description="Minimum number of bedrooms"),
+    max_beds: Optional[int] = Query(None, ge=0, description="Maximum number of bedrooms"),
+    min_baths: Optional[float] = Query(None, ge=0, description="Minimum number of bathrooms"),
+    max_baths: Optional[float] = Query(None, ge=0, description="Maximum number of bathrooms"),
     min_sqft: Optional[int] = Query(None, gt=0, description="Minimum square footage"),
+    max_sqft: Optional[int] = Query(None, gt=0, description="Maximum square footage"),
     criteria: Optional[InvestmentCriteria] = None,
     price_range: PriceRangeParams = Depends(PriceRangeParams),
     sorting: Dict = Depends(sorting_params),
@@ -1096,6 +1162,18 @@ async def get_properties_by_city(
 
     if style is not None:
         criteria.property_type = style
+
+    if min_beds is not None:
+        criteria.min_beds = min_beds
+    
+    if max_beds is not None:
+        criteria.max_beds = max_beds
+    
+    if min_baths is not None:
+        criteria.min_baths = min_baths
+    
+    if max_baths is not None:
+        criteria.max_baths = max_baths
     
     conn = get_db_connection()
     try:
@@ -1158,8 +1236,12 @@ async def get_properties_by_zipcode(
     style: Optional[str] = Query(None, description="Property style/type"),
     min_price: Optional[int] = Query(None, ge=0, description="Minimum property price"),
     max_price: Optional[int] = Query(None, gt=0, description="Maximum property price"),
-    max_sqft: Optional[int] = Query(None, gt=0, description="Maximum square footage"),
+    min_beds: Optional[int] = Query(None, ge=0, description="Minimum number of bedrooms"),
+    max_beds: Optional[int] = Query(None, ge=0, description="Maximum number of bedrooms"),
+    min_baths: Optional[float] = Query(None, ge=0, description="Minimum number of bathrooms"),
+    max_baths: Optional[float] = Query(None, ge=0, description="Maximum number of bathrooms"),
     min_sqft: Optional[int] = Query(None, gt=0, description="Minimum square footage"),
+    max_sqft: Optional[int] = Query(None, gt=0, description="Maximum square footage"),
     criteria: Optional[InvestmentCriteria] = None,
     price_range: PriceRangeParams = Depends(PriceRangeParams),
     sorting: Dict = Depends(sorting_params),
@@ -1188,6 +1270,18 @@ async def get_properties_by_zipcode(
 
     if style is not None:
         criteria.property_type = style
+
+    if min_beds is not None:
+        criteria.min_beds = min_beds
+    
+    if max_beds is not None:
+        criteria.max_beds = max_beds
+    
+    if min_baths is not None:
+        criteria.min_baths = min_baths
+    
+    if max_baths is not None:
+        criteria.max_baths = max_baths
     
     conn = get_db_connection()
     try:

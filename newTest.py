@@ -136,8 +136,17 @@ PROPERTY_DATA_FILES = [
     'for_sale_20250227_0643.csv',
     'for_sale_20250227_0659.csv',
     'for_sale_20250227_0702.csv',
-    'for_sale_20250227_0705.csv'
-
+    'for_sale_20250227_0705.csv',
+    "for_sale_20250327_1703.csv",
+    "for_sale_20250327_1707.csv",
+    "for_sale_20250327_1708.csv",
+    "for_sale_20250327_1709.csv",
+    "for_sale_20250327_1712.csv",
+    "for_sale_20250327_1713.csv",
+    "for_sale_20250327_1714.csv",
+    "for_sale_20250327_2024.csv",
+    "for_sale_20250327_2029.csv",
+    "for_sale_20250327_2031.csv"
 ]
 ZILLOW_RENT_DATA_FILE = 'zillow_rent_data.csv'
 OUTPUT_FINAL_FILE = 'final.csv'
