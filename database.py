@@ -22,8 +22,8 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Database configuration
-DB_FILE = 'final_investment_properties.db'
-FILTERED_PROPERTIES_FILE = 'filtered_investment_propertiesUPDATED.csv'
+DB_FILE = 'final.db'
+FILTERED_PROPERTIES_FILE = 'final.csv'
 ZILLOW_RENT_DATA_FILE = 'zillow_rent_data.csv'
 
 # Neighborhood quality factors - default values if ZORI calculation fails
@@ -825,7 +825,8 @@ def create_api_views(conn):
             total_return,
             irr,
             investment_ranking,
-            primary_photo
+            primary_photo,
+            style
         FROM properties
         ''')
         
