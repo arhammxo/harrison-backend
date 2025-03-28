@@ -169,7 +169,7 @@ def prepare_filtered_properties_data(df):
         
     # Ensure investment_ranking is available
     if 'investment_ranking' not in df.columns and 'investment_score' in df.columns:
-        df['investment_ranking'] = df['investment_score'].round().astype(int)
+        df['investment_ranking'] = df['investment_score'].astype(int)
         
     # Create complete address field if not present
     if 'full_address' not in df.columns:

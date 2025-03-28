@@ -20,8 +20,8 @@ def round_price(value):
     try:
         if value is None or value == '':
             return None
-        # Convert to float first, then round to integer
-        return int(round(float(value)))
+        # Just convert to float without rounding
+        return float(value)
     except (ValueError, TypeError):
         return value
 
@@ -802,11 +802,8 @@ def calculate_property_ranking(row):
         # Convert to 1-10 scale if needed (though it should already be close)
         total_score = min(10, max(1, total_score))
         
-        # Round to one decimal place
-        total_score = round(total_score, 1)
-        
         # Convert to integer ranking 1-10
-        ranking = min(10, max(1, round(total_score)))
+        ranking = min(10, max(1, int(total_score)))
         
         return total_score, ranking
         
@@ -1287,8 +1284,8 @@ def process_rental_estimates_for_file(input_file, output_file, zori_data):
             if monthly_rent:
                 row['zori_monthly_rent'] = round_price(monthly_rent)
                 row['zori_annual_rent'] = round_price(annual_rent)
-                row['zori_growth_rate'] = round(growth_rate, 2)
-                row['gross_rent_multiplier'] = round(grm, 2) if grm else None
+                row['zori_growth_rate'] = growth_rate
+                row['gross_rent_multiplier'] = grm if grm else None
                 
                 # Add 5-year projections
                 for i, proj in enumerate(projections):
@@ -1408,7 +1405,7 @@ def process_investment_metrics_for_file(input_file, output_file):
                 if key in ['monthly_rent', 'annual_rent', 'cash_equity', 'transaction_cost']:
                     row[key] = round_price(value) if isinstance(value, (int, float)) else value
                 else:
-                    row[key] = round(value, 2) if isinstance(value, (int, float)) else value
+                    row[key] = value if isinstance(value, (int, float)) else value
                 
             writer.writerow(row)
             count += 1
@@ -1503,7 +1500,7 @@ def process_final_metrics_for_file(input_file, output_file):
                           'exit_value', 'equity_at_exit']:
                     row[key] = round_price(value) if isinstance(value, (int, float)) else value
                 else:
-                    row[key] = round(value, 2) if isinstance(value, (int, float)) else value
+                    row[key] = value if isinstance(value, (int, float)) else value
                 
             writer.writerow(row)
             count += 1
