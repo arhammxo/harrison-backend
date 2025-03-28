@@ -11,7 +11,7 @@ filename = f"{listing_type}_{current_timestamp}.csv"
 start_time = time.time()
 
 properties = scrape_property(
-  location="Long Island, NY",
+  location="Fairfield, CT",
   listing_type=listing_type,  # or (for_sale, for_rent, pending)
   past_days=30,  # sold in last 30 days - listed in last 30 days if (for_sale, for_rent)
 

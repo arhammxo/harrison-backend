@@ -149,7 +149,8 @@ PROPERTY_DATA_FILES = [
     "for_sale_20250327_2031.csv",
     "for_sale_20250327_2128.csv",
     "for_sale_20250327_2129.csv",
-    "for_sale_20250327_2130.csv"
+    "for_sale_20250327_2130.csv",
+    "for_sale_20250328_0048.csv"
 ]
 ZILLOW_RENT_DATA_FILE = 'zillow_rent_data.csv'
 OUTPUT_FINAL_FILE = 'final.csv'
