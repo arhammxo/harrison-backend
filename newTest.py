@@ -969,10 +969,15 @@ def calculate_cash_flow_metrics(row, is_zori_based=True):
             tax = 0.01 * list_price  # Estimate tax at 1% of list price
         metrics['tax_used'] = tax
         
-        hoa_fee = float(row.get('hoa_fee', 0) or 0)
-        if hoa_fee == 0:
-            hoa_fee = (0.0015 * list_price) / 12  # Estimate HOA at 0.15% of list price annually
-        metrics['hoa_fee_used'] = hoa_fee
+        # Get monthly HOA fee
+        monthly_hoa_fee = float(row.get('hoa_fee', 0) or 0)
+        if monthly_hoa_fee == 0:
+            monthly_hoa_fee = (0.0015 * list_price) / 12  # Estimate HOA at 0.15% of list price annually
+        
+        # Store both monthly and annual HOA values
+        metrics['hoa_fee_used'] = monthly_hoa_fee
+        annual_hoa_fee = monthly_hoa_fee * 12
+        metrics['annual_hoa_fee'] = annual_hoa_fee
         
         # Calculate variable down payment percentage
         down_payment_pct = calculate_down_payment_pct(list_price, neighborhood_factor)
@@ -998,8 +1003,8 @@ def calculate_cash_flow_metrics(row, is_zori_based=True):
             maintenance = current_rent * 0.05  # 5% for maintenance
             insurance = list_price * 0.005  # Annual insurance at 0.5% of property value
             
-            # Total expenses
-            total_expenses = (hoa_fee * 12) + vacancy + management + maintenance + insurance
+            # Total expenses - now using annual HOA fee directly
+            total_expenses = annual_hoa_fee + vacancy + management + maintenance + insurance
             
             # Calculate NOI
             noi = current_rent - total_expenses
@@ -1371,6 +1376,7 @@ def process_investment_metrics_for_file(input_file, output_file):
         # Add new fields for investment metrics
         additional_fields = [
             'monthly_rent', 'annual_rent', 'tax_used', 'hoa_fee_used',
+            'annual_hoa_fee',  # Add this new field to the list
             'down_payment_pct', 'interest_rate', 'loan_term',
             'transaction_cost', 'cash_equity', 
             'noi_year1', 'noi_year2', 'noi_year3', 'noi_year4', 'noi_year5',

@@ -391,7 +391,7 @@ def create_calculation_audit_tables(conn, properties_df):
         # Create cash flow calculation audit table
         cf_columns = [
             'property_id', 'list_price', 'zori_monthly_rent', 'zori_annual_rent',
-            'tax', 'tax_used', 'hoa_fee', 'hoa_fee_used', 'down_payment_pct',
+            'tax', 'tax_used', 'hoa_fee', 'hoa_fee_used', 'annual_hoa_fee', 'down_payment_pct',
             'transaction_cost', 'cash_equity', 'noi_year1', 'cap_rate', 'ucf'
         ]
         
@@ -1002,6 +1002,7 @@ def ensure_required_fields(conn):
         ("price_per_sqft", "REAL"),
         ("neighborhoods", "TEXT"),
         ("hoa_fee", "REAL"),
+        ("annual_hoa_fee", "REAL"),  # Add this new field
         ("primary_photo", "TEXT"),
         ("alt_photos", "TEXT"),
         ("cap_rate", "REAL"),
