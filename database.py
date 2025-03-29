@@ -892,6 +892,7 @@ def create_api_views(conn):
             r.gross_rent_multiplier,
             cf.tax_used,
             cf.hoa_fee_used,
+            cf.annual_hoa_fee,
             cf.noi_year1,
             cf.cap_rate,
             cf.ucf,
@@ -1002,7 +1003,7 @@ def ensure_required_fields(conn):
         ("price_per_sqft", "REAL"),
         ("neighborhoods", "TEXT"),
         ("hoa_fee", "REAL"),
-        ("annual_hoa_fee", "REAL"),  # Add this new field
+        ("annual_hoa_fee", "REAL"),  # Added for annual HOA fee
         ("primary_photo", "TEXT"),
         ("alt_photos", "TEXT"),
         ("cap_rate", "REAL"),

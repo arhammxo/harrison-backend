@@ -969,7 +969,7 @@ def calculate_cash_flow_metrics(row, is_zori_based=True):
             tax = 0.01 * list_price  # Estimate tax at 1% of list price
         metrics['tax_used'] = tax
         
-        # Get monthly HOA fee
+        # Get monthly HOA fee and convert to annual
         monthly_hoa_fee = float(row.get('hoa_fee', 0) or 0)
         if monthly_hoa_fee == 0:
             monthly_hoa_fee = (0.0015 * list_price) / 12  # Estimate HOA at 0.15% of list price annually
@@ -994,22 +994,44 @@ def calculate_cash_flow_metrics(row, is_zori_based=True):
         metrics['transaction_cost'] = transaction_cost
         metrics['cash_equity'] = cash_equity
         
+        # Define expense inflation rate (for non-rent-based expenses)
+        expense_inflation = 0.025  # 2.5% annual inflation for fixed expenses
+        
+        # Initialize expense values for year 1
+        current_tax = tax
+        current_insurance = list_price * 0.005  # Annual insurance at 0.5% of property value
+        current_annual_hoa_fee = annual_hoa_fee
+        
         # Calculate NOI for 5 years with all standard operating expenses
         current_rent = annual_rent
         for year in range(1, 6):
+            # Apply inflation to fixed expenses after year 1
+            if year > 1:
+                current_tax *= (1 + expense_inflation)
+                current_insurance *= (1 + expense_inflation)
+                current_annual_hoa_fee *= (1 + expense_inflation)
+            
             # Calculate standard operating expenses
             vacancy = current_rent * 0.05  # 5% vacancy rate
             management = current_rent * 0.08  # 8% property management fee
             maintenance = current_rent * 0.05  # 5% for maintenance
-            insurance = list_price * 0.005  # Annual insurance at 0.5% of property value
+            capex_reserve = current_rent * 0.07  # 7% for capital expenditures
             
-            # Total expenses - now using annual HOA fee directly
-            total_expenses = annual_hoa_fee + vacancy + management + maintenance + insurance
+            # Total expenses - now including property tax and capex in NOI
+            total_expenses = current_annual_hoa_fee + vacancy + management + maintenance + current_insurance + current_tax + capex_reserve
             
-            # Calculate NOI
+            # Calculate NOI (correctly includes ALL operating expenses)
             noi = current_rent - total_expenses
             metrics[f'noi_year{year}'] = noi
-            current_rent *= (1 + growth_rate)  # Apply growth rate
+            
+            # UCF is the same as NOI since tax is now included in NOI
+            metrics[f'ucf_year{year}'] = noi
+            
+            # Apply growth rate to rental income for next year
+            current_rent *= (1 + growth_rate)
+        
+        # First year UCF = NOI since tax is already accounted for
+        metrics['ucf'] = metrics['ucf_year1']
         
         # Calculate cap rate with reasonable bounds
         if list_price > 0:
@@ -1018,14 +1040,8 @@ def calculate_cash_flow_metrics(row, is_zori_based=True):
         else:
             metrics['cap_rate'] = 0
         
-        # Calculate unlevered cash flow (UCF)
-        for year in range(1, 6):
-            metrics[f'ucf_year{year}'] = metrics[f'noi_year{year}'] - tax
-        
-        metrics['ucf'] = metrics['ucf_year1']  # First year UCF
-        
         # Calculate cash yield
-        metrics['cash_yield'] = (metrics['ucf'] / cash_equity) * 100 if cash_equity > 0 else 0
+        metrics['cash_yield'] = (metrics['ucf'] / metrics['cash_equity']) * 100 if metrics['cash_equity'] > 0 else 0
         
         return metrics
         
@@ -1376,7 +1392,7 @@ def process_investment_metrics_for_file(input_file, output_file):
         # Add new fields for investment metrics
         additional_fields = [
             'monthly_rent', 'annual_rent', 'tax_used', 'hoa_fee_used',
-            'annual_hoa_fee',  # Add this new field to the list
+            'annual_hoa_fee',  # Add the new annual HOA fee field
             'down_payment_pct', 'interest_rate', 'loan_term',
             'transaction_cost', 'cash_equity', 
             'noi_year1', 'noi_year2', 'noi_year3', 'noi_year4', 'noi_year5',
