@@ -392,7 +392,7 @@ def create_calculation_audit_tables(conn, properties_df):
         cf_columns = [
             'property_id', 'list_price', 'zori_monthly_rent', 'zori_annual_rent',
             'tax', 'tax_used', 'hoa_fee', 'hoa_fee_used', 'annual_hoa_fee', 'down_payment_pct',
-            'transaction_cost', 'cash_equity', 'noi_year1', 'cap_rate', 'ucf'
+            'transaction_cost', 'cash_equity', 'noi', 'noi_year1', 'cap_rate', 'ucf'
         ]
         
         cf_columns = [col for col in cf_columns if col in properties_df.columns]
@@ -425,7 +425,7 @@ def create_calculation_audit_tables(conn, properties_df):
         
         # Create cash flow projections audit table
         projections_columns = [
-            'property_id', 'list_price', 'zori_monthly_rent', 
+            'property_id', 'list_price', 'zori_monthly_rent', 'noi',
             'noi_year1', 'noi_year2', 'noi_year3', 'noi_year4', 'noi_year5',
             'ucf_year1', 'ucf_year2', 'ucf_year3', 'ucf_year4', 'ucf_year5',
             'lcf_year1', 'lcf_year2', 'lcf_year3', 'lcf_year4', 'lcf_year5'
@@ -892,6 +892,9 @@ def create_api_views(conn):
             r.gross_rent_multiplier,
             cf.tax_used,
             cf.hoa_fee_used,
+            cf.annual_hoa_fee,
+            cf.noi,      
+            cf.noi_year1,
             cf.noi_year1,
             cf.cap_rate,
             cf.ucf,
@@ -1002,7 +1005,8 @@ def ensure_required_fields(conn):
         ("price_per_sqft", "REAL"),
         ("neighborhoods", "TEXT"),
         ("hoa_fee", "REAL"),
-        ("annual_hoa_fee", "REAL"),  # Add this new field
+        ("annual_hoa_fee", "REAL"), 
+        ("noi", "REAL"), 
         ("primary_photo", "TEXT"),
         ("alt_photos", "TEXT"),
         ("cap_rate", "REAL"),

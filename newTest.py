@@ -963,6 +963,14 @@ def calculate_cash_flow_metrics(row, is_zori_based=True):
         neighborhood_factor = get_neighborhood_factor(zip_code)
         property_style = str(row.get('style', '')).strip() or 'default'
         
+        # Get property age for maintenance adjustments
+        year_built = float(row.get('year_built', 0) or 0)
+        current_year = datetime.now().year
+        property_age = max(1, current_year - year_built) if year_built > 0 else 20  # Default to 20 years if unknown
+        
+        # Calculate maintenance factor based on age (older properties need more maintenance)
+        age_factor = min(2.0, 1.0 + (property_age / 100))  # Cap at 2x for very old properties
+        
         # Calculate expenses
         tax = float(row.get('tax', 0) or 0)
         if tax == 0:
@@ -979,11 +987,10 @@ def calculate_cash_flow_metrics(row, is_zori_based=True):
         annual_hoa_fee = monthly_hoa_fee * 12
         metrics['annual_hoa_fee'] = annual_hoa_fee
         
-        # Calculate variable down payment percentage
+        # Calculate down payment and mortgage terms
         down_payment_pct = calculate_down_payment_pct(list_price, neighborhood_factor)
         metrics['down_payment_pct'] = down_payment_pct
         
-        # Calculate mortgage terms
         interest_rate, loan_term = determine_mortgage_terms(list_price, neighborhood_factor)
         metrics['interest_rate'] = interest_rate
         metrics['loan_term'] = loan_term
@@ -994,37 +1001,52 @@ def calculate_cash_flow_metrics(row, is_zori_based=True):
         metrics['transaction_cost'] = transaction_cost
         metrics['cash_equity'] = cash_equity
         
-        # Calculate NOI for 5 years with all standard operating expenses
+        # Initialize expense values for first year
         current_rent = annual_rent
+        annual_tax = tax
+        annual_insurance = list_price * 0.005  # Annual insurance at 0.5% of property value
+        annual_hoa = annual_hoa_fee
+        
+        # Define annual inflation rates
+        expense_inflation = 0.025  # 2.5% annual inflation for fixed expenses
+        
+        # Calculate NOI for 5 years with all standard operating expenses
         for year in range(1, 6):
             # Calculate standard operating expenses
             vacancy = current_rent * 0.05  # 5% vacancy rate
             management = current_rent * 0.08  # 8% property management fee
-            maintenance = current_rent * 0.05  # 5% for maintenance
-            insurance = list_price * 0.005  # Annual insurance at 0.5% of property value
+            maintenance = current_rent * 0.05 * age_factor  # Age-adjusted maintenance
+            capex_reserve = current_rent * 0.07  # 7% capital expenditure reserve
             
-            # Total expenses - now using annual HOA fee directly
-            total_expenses = annual_hoa_fee + vacancy + management + maintenance + insurance
+            # Total expenses INCLUDING property tax
+            total_expenses = annual_hoa + vacancy + management + maintenance + annual_insurance + annual_tax
             
-            # Calculate NOI
+            # Calculate correct NOI (with property tax included)
             noi = current_rent - total_expenses
             metrics[f'noi_year{year}'] = noi
-            current_rent *= (1 + growth_rate)  # Apply growth rate
+            
+            # Calculate unlevered cash flow (now subtracting CapEx from NOI since tax is already included)
+            ucf = noi - capex_reserve
+            metrics[f'ucf_year{year}'] = ucf
+            
+            # Apply growth rates for next year
+            current_rent *= (1 + growth_rate)
+            annual_tax *= (1 + expense_inflation)
+            annual_insurance *= (1 + expense_inflation)
+            annual_hoa *= (1 + expense_inflation)
         
-        # Calculate cap rate with reasonable bounds
+        # First year NOI and UCF for single metrics
+        metrics['noi'] = metrics['noi_year1']
+        metrics['ucf'] = metrics['ucf_year1']
+        
+        # Calculate cap rate based on the corrected NOI
         if list_price > 0:
-            raw_cap_rate = (metrics['noi_year1'] / list_price) * 100
-            metrics['cap_rate'] = min(15, max(-5, raw_cap_rate))  # Limit to reasonable range
+            cap_rate = (metrics['noi'] / list_price) * 100
+            metrics['cap_rate'] = min(15, max(-5, cap_rate))  # Limit to reasonable range
         else:
             metrics['cap_rate'] = 0
         
-        # Calculate unlevered cash flow (UCF)
-        for year in range(1, 6):
-            metrics[f'ucf_year{year}'] = metrics[f'noi_year{year}'] - tax
-        
-        metrics['ucf'] = metrics['ucf_year1']  # First year UCF
-        
-        # Calculate cash yield
+        # Calculate cash yield based on UCF
         metrics['cash_yield'] = (metrics['ucf'] / cash_equity) * 100 if cash_equity > 0 else 0
         
         return metrics
@@ -1147,7 +1169,7 @@ def calculate_investment_returns(row, metrics):
         exit_cap_rate = calculate_exit_cap_rate(cap_rate, growth_rate, neighborhood_factor)
         metrics['exit_cap_rate'] = exit_cap_rate * 100  # Store as percentage
         
-        # Calculate exit value using year 5 NOI and exit cap rate
+        # Calculate exit value using year 5 NOI (now including property tax) and exit cap rate
         noi_year5 = metrics.get('noi_year5', 0)
         if exit_cap_rate > 0:
             exit_value = noi_year5 / exit_cap_rate
@@ -1376,8 +1398,7 @@ def process_investment_metrics_for_file(input_file, output_file):
         # Add new fields for investment metrics
         additional_fields = [
             'monthly_rent', 'annual_rent', 'tax_used', 'hoa_fee_used',
-            'annual_hoa_fee',  # Add this new field to the list
-            'down_payment_pct', 'interest_rate', 'loan_term',
+            'annual_hoa_fee', 'noi', 'down_payment_pct', 'interest_rate', 'loan_term',
             'transaction_cost', 'cash_equity', 
             'noi_year1', 'noi_year2', 'noi_year3', 'noi_year4', 'noi_year5',
             'cap_rate', 'ucf', 'cash_yield',
