@@ -149,7 +149,8 @@ PROPERTY_DATA_FILES = [
     "for_sale_20250327_2031.csv",
     "for_sale_20250327_2128.csv",
     "for_sale_20250327_2129.csv",
-    "for_sale_20250327_2130.csv"
+    "for_sale_20250327_2130.csv",
+    "for_sale_20250328_0048.csv"
 ]
 ZILLOW_RENT_DATA_FILE = 'zillow_rent_data.csv'
 OUTPUT_FINAL_FILE = 'final.csv'
@@ -600,8 +601,8 @@ def calculate_down_payment_pct(list_price, neighborhood_factor):
     # Better neighborhoods can get more favorable financing
     down_payment_pct -= (neighborhood_factor - 0.75) * 0.05
     
-    # Ensure down payment is between 30% and 60%
-    return min(0.60, max(0.30, down_payment_pct))
+    # Ensure down payment is between 30% and 60% and round to 2 decimal places
+    return round(min(0.60, max(0.30, down_payment_pct)), 2)
 
 def determine_mortgage_terms(list_price, neighborhood_factor):
     """
@@ -987,7 +988,8 @@ def calculate_cash_flow_metrics(row, is_zori_based=True):
         
         # Calculate transaction costs and cash equity
         transaction_cost = 0.01 * list_price
-        cash_equity = down_payment_pct * (list_price + transaction_cost)
+        tp = list_price + transaction_cost
+        cash_equity = down_payment_pct * tp
         metrics['transaction_cost'] = transaction_cost
         metrics['cash_equity'] = cash_equity
         
