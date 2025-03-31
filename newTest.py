@@ -883,20 +883,21 @@ def estimate_rental_income(row, zori_by_zip, growth_rates_by_zip, avg_seasonalit
             # Calculate adjusted rent
             adjusted_rent = base_zori_rent * adjustment_factor
         
+        # FIX: Round monthly rent first, then calculate annual rent as exactly 12x
+        monthly_rent = round_price(adjusted_rent)
+        annual_rent = monthly_rent * 12  # Ensure exact 12x relationship
+        
         # Get neighborhood factor for growth rate calculation
         neighborhood_factor = get_neighborhood_factor(zip_code)
         
         # Calculate property-specific growth rate
         growth_rate = calculate_growth_rate(zip_code, neighborhood_factor, property_style, growth_rates_by_zip)
         
-        # Calculate 5-year rent projections
-        rent_projections = [adjusted_rent]
+        # Calculate 5-year rent projections starting from the rounded monthly rent
+        rent_projections = [monthly_rent]
         for year in range(1, 5):
             projected_rent = rent_projections[-1] * (1 + growth_rate)
-            rent_projections.append(projected_rent)
-        
-        # Calculate annual rent
-        annual_rent = adjusted_rent * 12
+            rent_projections.append(round_price(projected_rent))  # Round each projected amount
         
         # Calculate gross rent multiplier (price to annual rent)
         try:
@@ -905,7 +906,7 @@ def estimate_rental_income(row, zori_by_zip, growth_rates_by_zip, avg_seasonalit
         except (ValueError, ZeroDivisionError):
             grm = 0
             
-        return adjusted_rent, annual_rent, growth_rate * 100, rent_projections, grm
+        return monthly_rent, annual_rent, growth_rate * 100, rent_projections, grm
         
     except Exception as e:
         print(f"Error estimating rental income: {e}")
@@ -1288,14 +1289,14 @@ def process_rental_estimates_for_file(input_file, output_file, zori_data):
             
             # Add the values to the row
             if monthly_rent:
-                row['zori_monthly_rent'] = round_price(monthly_rent)
-                row['zori_annual_rent'] = round_price(annual_rent)
+                row['zori_monthly_rent'] = monthly_rent  # Already rounded in estimate_rental_income
+                row['zori_annual_rent'] = annual_rent    # Already calculated as monthly_rent * 12
                 row['zori_growth_rate'] = round(growth_rate, 2)
                 row['gross_rent_multiplier'] = round(grm, 2) if grm else None
                 
                 # Add 5-year projections
                 for i, proj in enumerate(projections):
-                    row[f'zori_rent_year{i+1}'] = round_price(proj)
+                    row[f'zori_rent_year{i+1}'] = proj  # Already rounded in estimate_rental_income
             else:
                 row['zori_monthly_rent'] = None
                 row['zori_annual_rent'] = None
