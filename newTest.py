@@ -149,7 +149,8 @@ PROPERTY_DATA_FILES = [
     "for_sale_20250327_2031.csv",
     "for_sale_20250327_2128.csv",
     "for_sale_20250327_2129.csv",
-    "for_sale_20250327_2130.csv"
+    "for_sale_20250327_2130.csv",
+    "for_sale_20250328_0048.csv"
 ]
 ZILLOW_RENT_DATA_FILE = 'zillow_rent_data.csv'
 OUTPUT_FINAL_FILE = 'final.csv'
@@ -994,14 +995,15 @@ def calculate_cash_flow_metrics(row, is_zori_based=True):
         # Calculate NOI for 5 years with all standard operating expenses
         current_rent = annual_rent
         for year in range(1, 6):
-            # Calculate standard operating expenses
-            vacancy = current_rent * 0.05  # 5% vacancy rate
-            management = current_rent * 0.08  # 8% property management fee
-            maintenance = current_rent * 0.05  # 5% for maintenance
-            insurance = list_price * 0.005  # Annual insurance at 0.5% of property value
+            # Calculate standard operating expenses according to the formulas
+            property_tax = 0.01 * list_price  # 1% of list price
+            insurance = 0.005 * list_price    # 0.5% of list price
+            maintenance = 0.01 * list_price   # 1% of list price - UPDATED
+            property_management = current_rent * 0.08  # 8% of rent
+            vacancy = current_rent * 0.05     # 5% of rent
             
-            # Total expenses
-            total_expenses = (hoa_fee * 12) + vacancy + management + maintenance + insurance
+            # Total expenses including tax - UPDATED
+            total_expenses = property_tax + insurance + maintenance + property_management + (hoa_fee * 12) + vacancy
             
             # Calculate NOI
             noi = current_rent - total_expenses
@@ -1015,9 +1017,10 @@ def calculate_cash_flow_metrics(row, is_zori_based=True):
         else:
             metrics['cap_rate'] = 0
         
-        # Calculate unlevered cash flow (UCF)
+        # Calculate unlevered cash flow (UCF) - UPDATED
+        # Since property tax is now included in NOI calculation, UCF equals NOI
         for year in range(1, 6):
-            metrics[f'ucf_year{year}'] = metrics[f'noi_year{year}'] - tax
+            metrics[f'ucf_year{year}'] = metrics[f'noi_year{year}']
         
         metrics['ucf'] = metrics['ucf_year1']  # First year UCF
         
