@@ -28,7 +28,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-LOCAL_TESTING = False  # Changed to True for local testing
+LOCAL_TESTING = True  # Changed to True for local testing
 
 
 # Initialize at startup
