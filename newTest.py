@@ -998,14 +998,13 @@ def calculate_cash_flow_metrics(row, is_zori_based=True):
         current_rent = annual_rent
         for year in range(1, 6):
             # Calculate standard operating expenses according to the formulas
-            property_tax = 0.01 * list_price  # 1% of list price
             insurance = 0.005 * list_price    # 0.5% of list price
-            maintenance = 0.01 * list_price   # 1% of list price - UPDATED
+            maintenance = 0.05 * current_rent   # 5% of rent - UPDATED
             property_management = current_rent * 0.08  # 8% of rent
             vacancy = current_rent * 0.05     # 5% of rent
             
             # Total expenses including tax - UPDATED
-            total_expenses = property_tax + insurance + maintenance + property_management + (hoa_fee * 12) + vacancy
+            total_expenses = insurance + maintenance + property_management + (hoa_fee * 12) + vacancy
             
             # Calculate NOI
             noi = current_rent - total_expenses
