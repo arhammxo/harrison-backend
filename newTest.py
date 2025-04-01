@@ -970,9 +970,10 @@ def calculate_cash_flow_metrics(row, is_zori_based=True):
         property_style = str(row.get('style', '')).strip() or 'default'
         
         # Calculate expenses
-        tax = float(row.get('tax', 0) or 0)
-        if tax == 0:
-            tax = 0.01 * list_price  # Estimate tax at 1% of list price
+        tax = 0.01 * list_price
+        # tax = float(row.get('tax', 0) or 0)
+        # if tax == 0:
+        #     tax = 0.01 * list_price  # Estimate tax at 1% of list price
         metrics['tax_used'] = tax
         
         hoa_fee = float(row.get('hoa_fee', 0) or 0)
@@ -1023,7 +1024,7 @@ def calculate_cash_flow_metrics(row, is_zori_based=True):
         # Calculate unlevered cash flow (UCF) - UPDATED
         # Since property tax is now included in NOI calculation, UCF equals NOI
         for year in range(1, 6):
-            metrics[f'ucf_year{year}'] = metrics[f'noi_year{year}']
+            metrics[f'ucf_year{year}'] = metrics[f'noi_year{year}'] - tax
         
         metrics['ucf'] = metrics['ucf_year1']  # First year UCF
         
