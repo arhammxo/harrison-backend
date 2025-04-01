@@ -714,9 +714,11 @@ def calculate_property_ranking(row):
         elif cap_rate < 5:
             cap_rate_score = 4 + ((cap_rate - 3) / 2) * 2  # 4-6 points
         elif cap_rate < 7:
-            cap_rate_score = 6 + ((cap_rate - 5) / 2) * 2  # 6-8 points
+            cap_rate_score = 6 + ((cap_rate - 5) / 2) * 2  # 6-8 points - fixed calculation
+        elif cap_rate < 10:
+            cap_rate_score = 8 + ((cap_rate - 7) / 3)  # 8-9 points
         else:
-            cap_rate_score = 8 + min(2, (cap_rate - 7) / 3)  # 8-10 points, capped at 10
+            cap_rate_score = 9 + min(1, (cap_rate - 10) / 10)  # 9-10 points, capped at 10
         
         # Cash-on-Cash Return Score (15%)
         if cash_on_cash < 0:
@@ -1014,7 +1016,7 @@ def calculate_cash_flow_metrics(row, is_zori_based=True):
         # Calculate cap rate with reasonable bounds
         if list_price > 0:
             raw_cap_rate = (metrics['noi_year1'] / list_price) * 100
-            metrics['cap_rate'] = min(15, max(-5, raw_cap_rate))  # Limit to reasonable range
+            metrics['cap_rate'] = round(raw_cap_rate, 1)  # Limit to reasonable range and round to 1 decimal
         else:
             metrics['cap_rate'] = 0
         
@@ -1146,7 +1148,7 @@ def calculate_investment_returns(row, metrics):
         
         # Calculate exit cap rate
         exit_cap_rate = calculate_exit_cap_rate(cap_rate, growth_rate, neighborhood_factor)
-        metrics['exit_cap_rate'] = exit_cap_rate * 100  # Store as percentage
+        metrics['exit_cap_rate'] = round(exit_cap_rate * 100, 1)  # Store as percentage with 1 decimal
         
         # Calculate exit value using year 5 NOI and exit cap rate
         noi_year5 = metrics.get('noi_year5', 0)
@@ -1555,7 +1557,7 @@ def filter_investment_outliers(input_file, output_file):
                 grm = float(row.get('gross_rent_multiplier', 0) or 0)
                 
                 # Skip properties with clearly problematic metrics
-                if (abs(cap_rate) > 15 or 
+                if (abs(cap_rate) > 20 or 
                     abs(irr) > 35 or 
                     abs(cash_on_cash) > 25 or
                     grm <= 5 or grm > 60):
